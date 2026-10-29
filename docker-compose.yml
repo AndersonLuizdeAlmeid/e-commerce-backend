@@ -1,0 +1,41 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: ecommerce
+      POSTGRES_USER: ecommerce
+      POSTGRES_PASSWORD: ecommerce
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ecommerce -d ecommerce"]
+      interval: 5s
+      retries: 10
+
+  # Captura os e-mails em dev (arquivo 23 §1): caixa de entrada em http://localhost:8025, SMTP na 1025.
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports: ["8025:8025", "1025:1025"]
+
+  migrator:
+    build: { context: ., target: migrator }
+    environment:
+      DOTNET_ENVIRONMENT: Development
+      ConnectionStrings__Database: Host=postgres;Port=5432;Database=ecommerce;Username=ecommerce;Password=ecommerce
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    build: { context: ., target: api }
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__Database: Host=postgres;Port=5432;Database=ecommerce;Username=ecommerce;Password=ecommerce
+      Email__Smtp__Host: mailpit
+      Email__Smtp__Port: "1025"
+    ports: ["5001:8080"]
+    depends_on:
+      migrator: { condition: service_completed_successfully }
+      mailpit: { condition: service_started }
+
+volumes:
+  pgdata: {}
