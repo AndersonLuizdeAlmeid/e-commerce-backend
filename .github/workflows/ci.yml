@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - run: dotnet restore ECommerce.sln
+      - run: dotnet format ECommerce.sln --verify-no-changes --no-restore
+      - run: dotnet build ECommerce.sln -c Release --no-restore
+      # Testes funcionais usam Testcontainers (Docker já disponível no runner)
+      - run: dotnet test ECommerce.sln -c Release --no-build --collect:"XPlat Code Coverage"
+      - run: dotnet list ECommerce.sln package --vulnerable --include-transitive
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --target migrator -t ecommerce-migrator .
+      - run: docker build --target api -t ecommerce-api .

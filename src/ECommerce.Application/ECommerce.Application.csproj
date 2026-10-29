@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\ECommerce.Domain\ECommerce.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Dapper" />
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+    <PackageReference Include="Scrutor" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ECommerce.Application.UnitTests" />
+  </ItemGroup>
+
+</Project>
