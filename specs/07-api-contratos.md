@@ -99,11 +99,14 @@ Resposta:
 | Método | Rota | Acesso | Descrição |
 |--------|------|--------|-----------|
 | GET | `/` | 👤 | Carrinho com preços atuais e alertas de estoque |
-| POST | `/items` | 👤 | `{ variantId, quantity }` |
-| PUT | `/items/{variantId}` | 👤 | `{ quantity }` |
-| DELETE | `/items/{variantId}` | 👤 | Remove item |
+| POST | `/items` | 👤 | `{ variantId, quantity }`; se a peça já está na sacola, soma. Devolve a sacola |
+| PUT | `/items/{variantId}` | 👤 | `{ quantity }`. Devolve a sacola |
+| DELETE | `/items/{variantId}` | 👤 | Remove item. Devolve a sacola |
 | DELETE | `/` | 👤 | Limpa |
-| POST | `/merge` | 👤 | `{ items: [{ variantId, quantity }] }` (RF-031) |
+| POST | `/merge` | 👤 | `{ items: [{ variantId, quantity }] }` (RF-031) → `{ cart, skippedVariantIds }` |
+| POST | `/api/v1/catalog/variants/lookup` | 🌐 | `{ items: [{ variantId, quantity }] }`, até 50: a sacola do visitante, que só guarda variação e quantidade. Mesma resposta de `GET /`, sem cache; variação inexistente fica de fora |
+
+Resposta: `{ items: [{ variantId, productName, productSlug, colorName, sizeName, variantLabels, imageUrl, imageAlt, unitPrice, quantity, lineTotal, status, availableQuantity }], subtotal }`. `status`: `Available`, `InsufficientStock` (com `availableQuantity`), `OutOfStock` ou `Unavailable`. `subtotal` conta só o que pode ser comprado. Variação inativa ou inexistente em `POST /items` → `422` `Carts.VariantUnavailable`; passar de 99 por peça ou 50 peças diferentes → `422`.
 
 ## 7. Pedidos e pagamentos (cliente) — `/api/v1/orders`
 

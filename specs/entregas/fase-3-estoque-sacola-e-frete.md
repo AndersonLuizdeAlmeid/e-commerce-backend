@@ -1,6 +1,6 @@
 # Entrega — Fase 3: Estoque, sacola e frete
 
-**Status:** Planejada em 02/11/2026. **Fatia 3.1 implementada e validada com banco, API em container e build de produção em 02/11/2026** (seção 8); faltam a câmera e o leitor USB de verdade. Fatias 3.2 a 3.4 não iniciadas.
+**Status:** Planejada em 02/11/2026. **Fatias 3.1 e 3.2 implementadas e validadas com banco, API em container e build de produção em 02/11/2026** (seção 8); na 3.1 faltam a câmera e o leitor USB de verdade. Fatias 3.3 e 3.4 não iniciadas.
 **Repositórios:** `e-commerce-backend` e `e-commerce-frontend` (branch `feat/fase-3` nos dois).
 
 ## 1. Contexto
@@ -33,7 +33,7 @@ As specs deixam estes pontos abertos ou contraditórios. Cada linha traz a decis
 
 | # | Ponto | Decisão | Motivo |
 |---|-------|---------|--------|
-| P1 | O visitante guarda só `variantId` e quantidade, e `GET /cart` exige login. Não há como ele ver preço e foto | Rota nova e pública: `POST /catalog/variants/lookup` `{ variantIds[] }`, até 50, com a mesma forma dos itens da sacola | Arquivo 16 §6 exige preço e disponibilidade vindos da API. Sem isso, a sacola do visitante não funciona |
+| P1 | O visitante guarda só `variantId` e quantidade, e `GET /cart` exige login. Não há como ele ver preço e foto | Rota nova e pública: `POST /catalog/variants/lookup` `{ items: [{ variantId, quantity }] }`, até 50, com a mesma resposta da sacola. A quantidade vai junto porque decide o aviso de estoque insuficiente | Arquivo 16 §6 exige preço e disponibilidade vindos da API. Sem isso, a sacola do visitante não funciona |
 | P2 | `Policies.Customer` exige o papel Customer, então admin logado receberia 403 em `/cart` | Admin usa a sacola local, como visitante, sem chamar `/cart` nem `/cart/merge` | Evita erro depois do login e não muda a autorização |
 | P3 | A chave de cache da cotação (arquivo 12) é `cep + pacotes`, e a regra de frete grátis depende do subtotal | **Só a resposta do provedor é cacheada**, com o valor declarado na chave. As regras são aplicadas depois do cache, a cada chamada | Com a chave da spec, dois carrinhos com o mesmo pacote e subtotais diferentes receberiam o mesmo preço |
 | P4 | Contingência foi descrita como regra (arquivo 22 §3.3), mas os valores estão em `shipping.settings` | Fica só em `settings`. As regras também se aplicam sobre a contingência, e a resposta traz `isFallback: true`. Contingência **não vai para o cache** | Uma falha de segundos não pode fixar preço de contingência por 30 min, e a promessa de frete grátis continua valendo |
@@ -102,7 +102,7 @@ Mudança em regras ou configuração invalida o HybridCache pela tag `shipping`.
 - O editor de produto ganha o saldo e um atalho para o estoque, e passa a avisar quando a peça ativa está zerada.
 - `/admin/frete`: configuração da loja e regras (nome, prioridade, vigência, condições, efeito).
 
-Onde houver escolha visual real, como a sacola vazia, as opções são mostradas rodando na loja antes de decidir.
+A sacola segue o arquivo 26 §4.5, com uma versão rodando na loja para aprovação; se não agradar, as alternativas são mostradas do mesmo jeito.
 
 ### 4.5 Testes a escrever
 
@@ -186,7 +186,7 @@ Primeiro só build (A), depois banco pelo DBeaver (B) e por último execução (
 | Fatia | Situação |
 |-------|----------|
 | 3.1 — Estoque | Implementada e validada em 02/11/2026; falta leitura com aparelho real |
-| 3.2 — Sacola | Não iniciada |
+| 3.2 — Sacola | Implementada e validada em 02/11/2026; falta aprovar o visual |
 | 3.3 — Cotação de frete | Não iniciada |
 | 3.4 — Regras de frete | Não iniciada |
 
@@ -210,6 +210,35 @@ Primeiro só build (A), depois banco pelo DBeaver (B) e por último execução (
 **Não verificado:**
 - **Câmera:** o intervalo de 2 s que impede a mesma peça de somar várias vezes por segundo não foi exercitado com câmera real. Para contar outra peça igual pela câmera, é preciso tirar o código da frente e esperar esse intervalo, ou ler outro código no meio.
 - **Lighthouse:** fica para o fechamento da fase (C17); esta fatia só mudou o painel.
+
+### 3.2 — Validação (02/11/2026)
+
+| # | Resultado |
+|---|-----------|
+| A1, A2 | ✅ 0 avisos e 0 erros; formatação sem alterações |
+| A3, A4 | ✅ lint, typecheck e 125 testes do frontend |
+| A5 | ✅ `npm run build` contra o stub e contra a API real |
+| B1, B2 | ✅ `database/fase-3-2-schema.sql` aplica no Postgres 17 e, repetido, para com "Script já aplicado" |
+| B4 | ✅ O `ECommerce.Migrator` responde "No new scripts" |
+| C1 | ✅ API em container. .NET: Domain 99, Application 32, Arquitetura 8, Funcionais 183 |
+| C6 | ✅ Visitante adiciona, recarrega e altera a quantidade; preço e foto vêm da API |
+| C7 | ✅ Preço alterado aparece na sacola ao reabrir |
+| C8 | ✅ Peça esgotada mostra o furo vazio e o aviso, e "Finalizar compra" sai. Estoque insuficiente oferece "Ajustar para N" |
+| C9 | ✅ Login com a mesma peça já salva: 3 + 2 = 5; sacola local apagada; volta para `/carrinho`. Limite de 99 coberto por teste funcional |
+| C10 | ✅ Admin usa a sacola local, sem nenhuma chamada a `/cart` |
+| C17 (parcial) | ✅ Lighthouse com o build de produção e a API real, 1 rodada: 100 nas quatro categorias em home, categoria e produto |
+
+Também conferido: "desfazer" ao remover, foco no seletor ao tocar em "Escolha o aro", barra fixa do celular em 375 px e botão da home sem sair da cartela em 375, 700 e 1280 px, nos dois casos (peça com aro abre a página; peça sem aro entra na sacola ali mesmo).
+
+**Achado na validação:** a frase "Adicionar à sacola" não cabia na coluna de texto da cartela da vez, do tablet em diante, e passava da borda. Nessas larguras o botão mostra "Adicionar", com a frase inteira para o leitor de tela.
+
+**Decisões de implementação:**
+- As escritas da sacola devolvem a sacola atualizada, sem exigir um `GET` depois.
+- Peça esgotada pode entrar na sacola pela API: o RF-030 só recusa inativa ou inexistente. A loja desliga o botão, e a sacola mostra o aviso.
+- O contador e a sacola do visitante não usam TanStack Query, que continua só no painel.
+- A home troca "Ver a peça" pelo botão de adicionar; a cartela inteira continua sendo o link da peça.
+
+**Não verificado:** toque em celular de verdade. O visual da sacola segue o arquivo 26 §4.5, com uma versão só; falta a aprovação da loja.
 
 ## 9. Riscos e pontos de atenção
 

@@ -31,6 +31,7 @@ public sealed class SecurityTests(ApiFactory factory) : FunctionalTest(factory)
         "GET /docs/favicon.svg",
         "GET /docs/scalar.aspnetcore.js",
         "GET /docs/scalar.js",
+        "POST /api/v1/catalog/variants/lookup",
         "POST /api/v1/auth/confirm-email",
         "POST /api/v1/auth/forgot-password",
         "POST /api/v1/auth/login",

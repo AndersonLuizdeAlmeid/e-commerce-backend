@@ -42,7 +42,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         _respawner = await Respawner.CreateAsync(connection, new RespawnerOptions
         {
             DbAdapter = DbAdapter.Postgres,
-            SchemasToInclude = ["catalog", "inventory", "identity", "customers", "messaging", "notifications"],
+            SchemasToInclude = ["catalog", "inventory", "carts", "identity", "customers", "messaging", "notifications"],
         });
     }
 

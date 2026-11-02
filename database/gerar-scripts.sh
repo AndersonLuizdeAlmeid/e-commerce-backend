@@ -96,3 +96,7 @@ gen database/fase-2b4-dados-exemplo.sql seedversions "$P.Seeds.Development" \
 gen database/fase-3-1-schema.sql schemaversions "$P.Migrations" \
   "Fase 3.1 — movimentações de estoque" "$P.Migrations.V0012__catalog_showcase.sql" \
   $M/V0013__inventory_stock_movements.sql
+
+gen database/fase-3-2-schema.sql schemaversions "$P.Migrations" \
+  "Fase 3.2 — sacola do cliente" "$P.Migrations.V0013__inventory_stock_movements.sql" \
+  $M/V0014__carts.sql
