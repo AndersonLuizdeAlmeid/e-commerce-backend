@@ -158,9 +158,10 @@ Exemplo `POST /orders/{id}/payments` (PIX) → `201`:
 | PUT/DELETE | `/occasions/{id}/image` | Imagem da ocasião (multipart, RF-061) / remover |
 | PUT | `/orders/{id}/gift-message` | Corrigir dedicatória até `Enviado` (RF-047 CA3) |
 | GET | `/variants/by-barcode/{code}` | Localiza a variação (RF-059); dígito errado → `400`; sem dono → `404` `Catalog.BarcodeNotFound` |
-| POST | `/stock/scan` | `{ barcode, quantity = 1, reason }` entrada de estoque por leitura |
-| GET | `/stock?lowStock=true&search=` | Estoque por variação (busca também por código de barras) |
-| POST | `/stock/{variantId}/movements` | `{ type, quantity, reason }` (RF-052) |
+| POST | `/stock/scan` | `{ barcode, quantity = 1, reason? }` entrada de estoque por leitura; cada chamada soma de novo. Devolve a peça e o saldo. Dígito errado → `400`; sem dono → `404` `Catalog.BarcodeNotFound` (RF-059) |
+| GET | `/stock?lowStock=true&search=&page=` | Estoque por variação (busca também por código de barras). `lowStock` traz só o que está à venda |
+| POST | `/stock/{variantId}/movements` | `{ type: In\|Out\|Adjustment, quantity, reason }`: em `In` e `Out`, o que entra ou sai; em `Adjustment`, o novo saldo. Saldo negativo → `422` `Inventory.InsufficientStock` (RF-052) |
+| GET | `/stock/{variantId}/movements?page=` | Histórico: tipo, delta com sinal, motivo, autor e data |
 | GET/PUT | `/shipping/settings` | CEP de origem, manuseio, contingência (RF-058) |
 | GET/POST | `/shipping/rules` | Regras de frete |
 | PUT/DELETE | `/shipping/rules/{id}` | Editar/remover |

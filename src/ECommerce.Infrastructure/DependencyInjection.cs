@@ -9,6 +9,7 @@ using ECommerce.Application.Abstractions.Outbox;
 using ECommerce.Domain.Catalog;
 using ECommerce.Domain.Customers;
 using ECommerce.Domain.Identity;
+using ECommerce.Domain.Inventory;
 using ECommerce.Infrastructure.Authentication;
 using ECommerce.Infrastructure.Caching;
 using ECommerce.Infrastructure.Images;
@@ -68,6 +69,7 @@ public static class DependencyInjection
         services.AddScoped<ICollectionRepository, CollectionRepository>();
         services.AddScoped<IOccasionRepository, OccasionRepository>();
         services.AddScoped<IShowcaseFeaturedRepository, ShowcaseFeaturedRepository>();
+        services.AddScoped<IStockItemRepository, StockItemRepository>();
     }
 
     private static void AddCaching(IServiceCollection services, IConfiguration configuration)

@@ -9,8 +9,8 @@ using FluentValidation;
 
 namespace ECommerce.Application.Catalog.Admin;
 
-// RF-051 (produtos), RF-056 (grade de variações) e RF-059 (código de barras). A entrada de estoque por leitura é da
-// Fase 3. As fotos ficam em AdminProductImages (RF-061).
+// RF-051 (produtos), RF-056 (grade de variações) e RF-059 (código de barras). A entrada de estoque por leitura fica
+// em Inventory/AdminStock. As fotos ficam em AdminProductImages (RF-061).
 
 public sealed record AdminProductSummaryResponse(
     Guid Id,
