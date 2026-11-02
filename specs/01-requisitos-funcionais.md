@@ -74,6 +74,32 @@ O visitante cria uma conta informando nome, e-mail, senha, telefone e (opcional)
 
 ### RF-023 — Listar cores e tamanhos disponíveis (para filtros)
 
+### RF-024 — Coleções
+**Ator:** Visitante (consulta) / Admin (cadastro)
+*Decidido em 29/10/2026 (arquivo 26, ADR-F08). Exemplos: "Eles" (masculino), "Prata 925".*
+- Uma coleção agrupa produtos **de qualquer categoria**: o produto mora em **uma** categoria e pode estar em **várias** coleções.
+- Campos: nome, slug, descrição, campos SEO, imagem de capa opcional (RF-061), tema da cartela (`Ivory` ou `Graphite`, arquivo 26 §2.2), posição na navegação, ativa.
+- Público: listar coleções ativas e listar os produtos de uma coleção com a mesma paginação, ordenação e filtros do RF-020 (inclusive filtro por categoria).
+- Admin: criar, editar, ativar/desativar, ordenar; incluir e remover produtos, **inclusive em lote** a partir da lista de produtos.
+- **CA1** Produto inativo não aparece na coleção pública, mas continua vinculado.
+- **CA2** Coleção inativa ou inexistente → `404`.
+- **CA3** Coleção ativa entra no sitemap, com metadata e canonical próprios (arquivo 24); com filtros vira `noindex,follow`, como a categoria.
+- **CA4** Alterar o slug cria redirect 301 (`slug_history` com `entity_type = 'Collection'`).
+- **CA5** Incluir um produto que já está na coleção não duplica nem dá erro.
+- **CA6** Excluir coleção não exclui produtos (só remove os vínculos).
+
+### RF-025 — Vitrine: peça em destaque e ocasião
+**Ator:** Visitante (consulta) / Admin (cadastro)
+*Decidido em 29/10/2026 (arquivo 26, D-F03).*
+- **Peça em destaque:** o admin escolhe um produto (e, opcionalmente, o acabamento/cor padrão) para a primeira tela da home.
+- **Ocasião:** o admin cadastra datas comemorativas (ex.: Dia das Mães) com nome, texto curto (até 160 caracteres), imagem opcional (RF-061), início, fim, ativa e a lista ordenada de produtos.
+- Público: uma consulta devolve o destaque e a ocasião vigente, para a home e a página de Presente.
+- **CA1** Destaque inativo, inexistente ou sem nenhuma variação disponível → a consulta devolve no lugar a **novidade mais recente com estoque**, com o campo `isFallback = true`.
+- **CA2** Duas ocasiões ativas não podem ter períodos que se sobrepõem → `409`.
+- **CA3** Fora do período (início e fim inclusivos, horário de Brasília), a ocasião não é devolvida, sem depender de job.
+- **CA4** A ocasião devolve só produtos ativos; sem nenhum, a ocasião não é devolvida.
+- **CA5** Alterar destaque ou ocasião invalida o cache e revalida a home e a página de Presente.
+
 ---
 
 ## 3. Carrinho e Frete
@@ -101,12 +127,12 @@ O visitante cria uma conta informando nome, e-mail, senha, telefone e (opcional)
 
 ### RF-040 — Checkout (criar pedido)
 **Ator:** Cliente (cadastro **obrigatório** — não há compra como visitante)
-Entrada: endereço de entrega (ID), **serviço de frete** escolhido, observação opcional.
+Entrada: endereço de entrega (ID), **serviço de frete** escolhido, observação opcional e, opcionalmente, os dados de **presente** (RF-047).
 - **CA1** Carrinho vazio → `422`.
 - **CA2** Valida variação ativa e estoque suficiente para cada item; se algum falhar → `409` listando os itens, e **nada** é persistido.
 - **CA3** **Recalcula o frete** no servidor para o serviço escolhido.
 - **CA4** Em sucesso: cria o pedido em `AguardandoPagamento`, congela preço/nome/SKU/cor/tamanho, frete e endereço, baixa o estoque e esvazia o carrinho — **mesma transação**; e-mail EM-04 via Outbox.
-- **CA5** Total = soma(itens) + frete (após regras). 2 casas decimais.
+- **CA5** Total = soma(itens) + frete (após regras) + embalagem para presente, quando escolhida (RF-047). 2 casas decimais.
 - **CA6** Número de pedido legível e sequencial (`PED-000123`).
 - **CA7** Header `Idempotency-Key` evita pedido duplicado.
 
@@ -125,6 +151,17 @@ Entrada: endereço de entrega (ID), **serviço de frete** escolhido, observaçã
 - **CA2** Lembrete de pagamento enviado com 24 h (EM-05).
 - **CA3** Pagamento aprovado depois do cancelamento → estorno automático (RN-101).
 
+### RF-047 — Presente no pedido
+**Ator:** Cliente
+*Decidido em 29/10/2026 (arquivo 26, D-F02).*
+- No checkout, o cliente pode marcar o pedido como **presente**, pedir **embalagem para presente** e escrever uma **dedicatória**.
+- O valor da embalagem é configurado pela loja (zero = grátis; valor ainda em aberto, arquivo 26, D-F08).
+- **CA1** Dedicatória opcional, texto puro, até **200 caracteres** e 6 linhas (limite provisório, arquivo 26, D-F09). Acima disso → `400` com erro no campo.
+- **CA2** Embalagem escolhida soma o valor configurado **no momento do checkout** ao total (RF-040 CA5); mudar o valor depois não altera pedidos existentes.
+- **CA3** Presente, embalagem e dedicatória são **congelados** no pedido. O cliente não edita depois; o admin pode corrigir a dedicatória até o pedido ser `Enviado`, com registro de quem alterou.
+- **CA4** A dedicatória aparece no detalhe do pedido (cliente e admin), no e-mail de pedido criado (EM-04) e no aviso ao admin (EM-07). Na lista do admin, pedidos de presente são marcados.
+- **CA5** A dedicatória é dado do pedido (mesma retenção, LGPD) e **não** é gravada em logs.
+
 ### RF-041 — Listar meus pedidos
 - Paginado, mais recentes primeiro.
 
@@ -141,11 +178,32 @@ Entrada: endereço de entrega (ID), **serviço de frete** escolhido, observaçã
 
 ### RF-050 — CRUD de categorias
 - Criar, editar (incl. texto e campos de SEO), ativar/desativar. Não exclui categoria com produtos (`409`).
+- **Rótulos de variação** (arquivo 26, ADR-F07): `colorLabel` e `sizeLabel` opcionais, até 30 caracteres cada (ex.: "Acabamento" e "Aro" em Anéis; "Cor" e "Tamanho" em Bolsas). As APIs públicas de categoria e de produto devolvem os rótulos **já resolvidos**.
+- **CA1** Subcategoria sem rótulo herda o da categoria pai; sem nenhum, vale "Cor" / "Tamanho".
+- **CA2** Mudar o rótulo não altera variações nem pedidos; só o texto da tela.
 
 ### RF-051 — CRUD de produtos
-- Campos: nome, slug, descrição, categoria, imagens (com `alt` e cor opcional), campos SEO, peso/medidas padrão, ativo.
+- Campos: nome, slug, descrição, categoria, **coleções** (RF-024), imagens (RF-061), campos SEO, peso/medidas padrão, ativo.
 - **CA1** Exclusão é lógica.
 - **CA2** Alterar slug cria redirect 301 (arquivo 24).
+- **CA3** Produto **sem nenhuma imagem não pode ser ativado** → `422` (a peça é a protagonista da loja, arquivo 26).
+
+### RF-061 — Imagens (upload pelo painel)
+**Ator:** Admin
+*Aprovado no arquivo 20, D06 (Cloudflare R2); detalhado em 29/10/2026.*
+- Usado por **produto** (galeria por cor/acabamento), **coleção** (capa, RF-024) e **ocasião** (RF-025).
+- O painel deixa escolher **até 10 arquivos de uma vez**, do computador ou direto da **câmera do celular**. Cada arquivo sobe numa **requisição própria** (até 3 em paralelo), com progresso por foto; assim ninguém esbarra no limite de 100 MB por requisição do Cloudflare.
+- Formatos: **JPEG, PNG, WebP e HEIC/HEIF** (foto de iPhone). Até **15 MB** por arquivo.
+- Processamento no servidor: o tipo é validado pelos *magic bytes* e a imagem é **reprocessada** (arquivo 17); a orientação é corrigida; **todos os metadados (EXIF, GPS) são removidos**; a imagem é reduzida para no máximo 2400 px no lado maior e salva em **WebP**. Os outros tamanhos saem do `next/image`.
+- Armazenamento no R2 com chave imutável (ex.: `products/{productId}/{imageId}.webp`) e URL pública pelo domínio de imagens. Em desenvolvimento, o **RustFS** (S3 compatível) substitui o R2 com o mesmo cliente; os testes automatizados usam um armazenamento falso.
+- Produto: cada imagem tem `alt` (obrigatório; o painel sugere "Nome — Acabamento"), cor/acabamento opcional e posição. Reordenar arrastando; a primeira de cada acabamento é a capa dele.
+- **CA1** Arquivo inválido volta com o motivo (tipo não aceito, acima de 15 MB, imagem corrompida) e não salva nada; as outras fotos escolhidas junto continuam subindo.
+- **CA2** Imagem salva não contém EXIF nem GPS.
+- **CA3** Imagem com menos de 1600 px no lado maior é aceita, mas o painel avisa que vai perder qualidade (padrão de foto do arquivo 26 §7.2).
+- **CA4** Remover a imagem tira do banco na hora; o arquivo no R2 é apagado depois, via Outbox (arquivo 25).
+- **CA5** A última foto de um produto ativo não pode ser removida → `422` (mesma regra do RF-051 CA3).
+- **CA5** Reordenar mantém a posição única por produto + cor (`catalog.product_images`).
+- **CA6** Qualquer mudança de imagem invalida o cache e revalida a página do produto, da coleção ou da home afetada.
 
 ### RF-056 — Gerenciar variações
 - Gerar a grade a partir das cores e tamanhos escolhidos (ex.: 3 cores × 4 tamanhos = 12 variações) e editar cada uma: SKU, preço (padrão herdado do produto), peso/medidas, ativo.

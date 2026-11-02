@@ -30,7 +30,7 @@ internal sealed partial class OutboxProcessor(
                     // Lote cheio: provavelmente há mais mensagens esperando.
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
             {
                 LogBatchFailed(logger, ex);
             }
@@ -78,7 +78,9 @@ internal sealed partial class OutboxProcessor(
 
                 await handler.HandleAsync(message.Payload, cancellationToken);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            // Timeout do HttpClient também é TaskCanceledException: só o token diz se o host está parando.
+            // Sem isso, um provedor lento derrubaria o BackgroundService e, com ele, a API inteira.
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
                 error = ex.Message;
                 LogMessageFailed(logger, message.Type, message.Id, message.Attempts + 1, ex);

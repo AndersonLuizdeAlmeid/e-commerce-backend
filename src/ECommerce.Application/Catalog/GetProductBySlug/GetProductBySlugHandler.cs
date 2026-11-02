@@ -11,11 +11,12 @@ internal sealed class GetProductBySlugHandler(IDbConnectionFactory connectionFac
     : IQueryHandler<GetProductBySlugQuery, ProductBySlugResult>
 {
     // Visível na loja: produto e categoria ativos e ao menos uma variação ativa (RN-023, RN-024).
-    private const string ProductSql = """
+    private const string ProductSql = $"""
         SELECT p.id, p.slug, p.name, p.description, p.seo_title, p.seo_description, p.updated_at,
-               c.slug AS category_slug, c.name AS category_name
+               c.slug AS category_slug, c.name AS category_name, {VariantLabelsResponse.SqlColumns}
           FROM catalog.products p
           JOIN catalog.categories c ON c.id = p.category_id
+          {VariantLabelsResponse.SqlParentJoin}
          WHERE p.slug = @Slug AND p.is_active AND c.is_active
            AND EXISTS (SELECT 1 FROM catalog.product_variants v WHERE v.product_id = p.id AND v.is_active);
 
@@ -144,7 +145,8 @@ internal sealed class GetProductBySlugHandler(IDbConnectionFactory connectionFac
             sizes,
             variants,
             images,
-            DateTime.SpecifyKind(row.UpdatedAt, DateTimeKind.Utc));
+            DateTime.SpecifyKind(row.UpdatedAt, DateTimeKind.Utc),
+            new VariantLabelsResponse(row.ColorLabel, row.SizeLabel));
     }
 
     private sealed class ProductRow
@@ -158,6 +160,8 @@ internal sealed class GetProductBySlugHandler(IDbConnectionFactory connectionFac
         public DateTime UpdatedAt { get; init; }
         public string CategorySlug { get; init; } = string.Empty;
         public string CategoryName { get; init; } = string.Empty;
+        public string ColorLabel { get; init; } = string.Empty;
+        public string SizeLabel { get; init; } = string.Empty;
     }
 
     private sealed class VariantRow

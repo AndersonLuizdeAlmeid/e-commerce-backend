@@ -42,7 +42,7 @@ Uma SPA pura (React + Vite) entrega HTML vazio e depende do Google executar Java
 
 ## 4. Imagens
 
-SEO e performance dependem de imagens boas e rápidas. **Decidido (arquivo 20, D06): upload pelo admin para o Cloudflare R2** (sem custo de saída; gratuito até 10 GB), servido pelo CDN da Cloudflare e otimizado pelo `next/image`. Em dev, MinIO (compatível com S3). Até lá, imagens ilustrativas (D12).
+SEO e performance dependem de imagens boas e rápidas. **Decidido (arquivo 20, D06): upload pelo admin para o Cloudflare R2** (sem custo de saída; gratuito até 10 GB), servido pelo CDN da Cloudflare e otimizado pelo `next/image`. Em dev, RustFS (compatível com S3). Até lá, imagens ilustrativas (D12).
 
 ## 5. Medição
 

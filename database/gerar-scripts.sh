@@ -76,3 +76,19 @@ gen database/fase-1-dados-exemplo.sql seedversions "$P.Seeds.Development" \
 gen database/fase-2a-schema.sql schemaversions "$P.Migrations" \
   "Fase 2A — contas: identity (usuários, sessões, tokens), customers, outbox e log de e-mails" "$P.Migrations.V0005__seed_colors_and_sizes.sql" \
   $M/V0006__identity.sql $M/V0007__customers.sql $M/V0008__messaging_outbox_and_email_log.sql
+
+gen database/fase-2b-schema.sql schemaversions "$P.Migrations" \
+  "Fase 2B — catálogo no painel: subcategoria, rótulos da grade por categoria e dados das fotos" "$P.Migrations.V0008__messaging_outbox_and_email_log.sql" \
+  $M/V0009__catalog_category_hierarchy_and_labels.sql $M/V0010__catalog_images_storage.sql
+
+gen database/fase-2b-dados-exemplo.sql seedversions "$P.Seeds.Development" \
+  "Fase 2B — catálogo de exemplo da MO (semijoias e bolsas); inativa os exemplos de roupa (SOMENTE Development)" "$P.Migrations.V0009__catalog_category_hierarchy_and_labels.sql" \
+  $S/S0003__example_jewelry.sql
+
+gen database/fase-2b4-schema.sql schemaversions "$P.Migrations" \
+  "Fase 2B.4 — coleções, peça em destaque e ocasiões" "$P.Migrations.V0010__catalog_images_storage.sql" \
+  $M/V0011__catalog_collections.sql $M/V0012__catalog_showcase.sql
+
+gen database/fase-2b4-dados-exemplo.sql seedversions "$P.Seeds.Development" \
+  "Fase 2B.4 — coleções, destaque e ocasião de exemplo da MO (SOMENTE Development; requer fase-2b-dados-exemplo)" "$P.Migrations.V0012__catalog_showcase.sql" \
+  $S/S0004__example_collections.sql

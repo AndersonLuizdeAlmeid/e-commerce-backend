@@ -44,9 +44,12 @@ Legenda: 🌐 público · 👤 Cliente · 🛡️ Admin · 🔑 qualquer autenti
 |--------|------|--------|-----------|
 | GET | `/products?page&pageSize&category&minPrice&maxPrice&search&colors&sizes&sort=price:asc` | 🌐 | RF-020 |
 | GET | `/products/{slug}` | 🌐 | RF-021 — inclui variações, grade e imagens; slug antigo → `301` com `Location`; inativo → `410` |
-| GET | `/categories` | 🌐 | RF-022 |
-| GET | `/categories/{slug}` | 🌐 | Dados da categoria (texto, SEO) |
+| GET | `/categories` | 🌐 | RF-022 — inclui `parentId`; a navegação da loja mostra só as principais |
+| GET | `/categories/{slug}` | 🌐 | Dados da categoria (texto, SEO, `variantLabels`); slug antigo → `301` com `Location` |
 | GET | `/filters?category=` | 🌐 | Cores e tamanhos disponíveis (RF-023) |
+| GET | `/collections` | 🌐 | Coleções ativas, na ordem da navegação (RF-024) |
+| GET | `/collections/{slug}` | 🌐 | Dados da coleção (texto, SEO, capa, `cardTheme`); slug antigo → `301` |
+| GET | `/showcase` | 🌐 | `{ featured: { product, colorId?, isFallback }, occasion: { name, text, image?, products[] } \| null }` (RF-025) |
 | GET | `/sitemap` | 🌐 | Slugs + `updatedAt` de produtos e categorias ativos (consumido pelo Next.js) |
 | GET | `/feeds/google-merchant.xml` | 🌐 | Feed de produtos (SEO-14) |
 
@@ -57,6 +60,7 @@ Detalhes implementados na Fase 1:
 - **`GET /products/{slug}`**: slug antigo → `301` com `Location: /api/v1/catalog/products/{slugAtual}`; produto inativo, sem variação ativa ou em categoria inativa → `410` (`code: "Catalog.ProductUnavailable"`, extensão `categorySlug`, nula se a categoria também saiu); slug desconhecido → `404` (`Catalog.ProductNotFound`). As variações trazem `gtin` (código de barras, para o JSON-LD) e `available`, nunca a quantidade.
 - **`GET /filters`** → `{ colors, sizes, minPrice, maxPrice }` considerando só variações visíveis na loja.
 - **`GET /sitemap`** → `{ categories: [{ slug, updatedAt }], products: [{ slug, updatedAt }] }`.
+- *A partir da Fase 2B (arquivo 26):* `GET /products` e `GET /filters` aceitam `collection` (slug); `GET /filters` traz `categories`; `GET /categories/{slug}` e `GET /products/{slug}` trazem `variantLabels: { color, size }` já resolvidos (RF-050); `GET /sitemap` inclui `collections`.
 - Todos os `GET` públicos do catálogo respondem `Cache-Control: public, max-age=60` e `ETag`; `If-None-Match` igual → `304` sem corpo. Erros não recebem esses headers.
 
 Exemplo `GET /products/camiseta-basica`:
@@ -105,7 +109,7 @@ Resposta:
 
 | Método | Rota | Acesso | Descrição |
 |--------|------|--------|-----------|
-| POST | `/` | 👤 | Checkout `{ addressId, shippingServiceCode, notes? }` + `Idempotency-Key` (RF-040) → 201 |
+| POST | `/` | 👤 | Checkout `{ addressId, shippingServiceCode, notes?, gift?: { wrap, message? } }` + `Idempotency-Key` (RF-040, RF-047) → 201 |
 | GET | `/` | 👤 | Meus pedidos (RF-041) |
 | GET | `/{id}` | 👤 | Detalhe com pagamento, frete, rastreio (RF-042) |
 | POST | `/{id}/cancel` | 👤 | Cancelar (RF-043) |
@@ -131,17 +135,29 @@ Exemplo `POST /orders/{id}/payments` (PIX) → `201`:
 | GET/POST | `/categories` | Listar / criar (RF-050) |
 | PUT | `/categories/{id}` | Editar |
 | PATCH | `/categories/{id}/status` | Ativar/desativar |
+| DELETE | `/categories/{id}` | Exclui; com produtos ou subcategorias → `409` |
 | GET/POST | `/colors`, `/sizes` | Cores e tamanhos (RF-057) |
 | PUT/DELETE | `/colors/{id}`, `/sizes/{id}` | Editar/remover (se não usado) |
 | GET/POST | `/products` | Listar / criar (RF-051) |
 | GET/PUT | `/products/{id}` | Detalhe / editar |
 | PATCH | `/products/{id}/status` | Ativar/desativar |
-| POST | `/products/{id}/variants/generate` | `{ colorIds[], sizeIds[] }` gera a grade (RF-056) |
+| POST | `/products/{id}/variants/generate` | `{ colorIds[], sizeIds[] }` cria só as combinações que faltam e devolve `{ created }` (RF-056); listas vazias criam a variação única |
 | PUT | `/products/{id}/variants/{variantId}` | Editar variação |
 | PATCH | `/products/{id}/variants/{variantId}/status` | Ativar/desativar |
-| POST | `/products/{id}/images` | Upload de imagem (multipart) *(aprovado — arquivo 20, D06: Cloudflare R2)* |
-| PUT/DELETE | `/products/{id}/images/{imageId}` | Ordem, alt, cor / remover |
-| GET | `/variants/by-barcode/{code}` | Localiza a variação pelo código de barras (RF-059) |
+| POST | `/products/{id}/images` | Upload multipart de **um** arquivo (máx. 15 MB) com `alt` e `colorId?` (RF-061) → 201 com `{ id, url, width, height }`; o painel envia até 3 em paralelo |
+| PUT/DELETE | `/products/{id}/images/{imageId}` | `{ alt, colorId? }` / remover (a última foto de produto ativo → 422) |
+| PUT | `/products/{id}/images/order` | `{ colorId?, imageIds[] }` reordena a galeria de um acabamento |
+| GET/POST | `/collections` | Listar / criar (RF-024) |
+| PUT/DELETE | `/collections/{id}` | Editar / excluir (só os vínculos saem) |
+| PATCH | `/collections/{id}/status` | Ativar/desativar |
+| POST/DELETE | `/collections/{id}/products` | `{ productIds[] }` inclui (`{ added }`) / remove em lote, até 100 |
+| PUT/DELETE | `/collections/{id}/image` | Capa da coleção (multipart, RF-061) / remover |
+| GET/PUT | `/showcase/featured` | Peça em destaque (RF-025). GET: `{ productId, productName, colorId, isAvailable }`, ou 204 sem escolha. PUT: `{ productId?, colorId? }`; `productId` nulo tira o destaque |
+| GET/POST | `/occasions` | Ocasiões (RF-025): `{ name, text?, startsOn, endsOn, isActive, productIds[] }`, datas em `AAAA-MM-DD` |
+| PUT/DELETE | `/occasions/{id}` | Editar (`{ version, occasion }`) / excluir; período sobreposto → `409` |
+| PUT/DELETE | `/occasions/{id}/image` | Imagem da ocasião (multipart, RF-061) / remover |
+| PUT | `/orders/{id}/gift-message` | Corrigir dedicatória até `Enviado` (RF-047 CA3) |
+| GET | `/variants/by-barcode/{code}` | Localiza a variação (RF-059); dígito errado → `400`; sem dono → `404` `Catalog.BarcodeNotFound` |
 | POST | `/stock/scan` | `{ barcode, quantity = 1, reason }` entrada de estoque por leitura |
 | GET | `/stock?lowStock=true&search=` | Estoque por variação (busca também por código de barras) |
 | POST | `/stock/{variantId}/movements` | `{ type, quantity, reason }` (RF-052) |

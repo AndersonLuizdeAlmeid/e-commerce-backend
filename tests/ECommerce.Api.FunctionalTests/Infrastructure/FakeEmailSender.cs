@@ -14,8 +14,17 @@ public sealed partial class FakeEmailSender : IEmailSender
     /// <summary>Faz o próximo envio falhar (testa o retry do Outbox).</summary>
     public int FailNext { get; set; }
 
+    /// <summary>Faz o próximo envio estourar o tempo, como o timeout do HttpClient (cancelado sem o host estar parando).</summary>
+    public int TimeOutNext { get; set; }
+
     public Task<string?> SendAsync(EmailMessage message, CancellationToken cancellationToken)
     {
+        if (TimeOutNext > 0)
+        {
+            TimeOutNext--;
+            throw new TaskCanceledException("Timeout simulado do provedor de e-mail.");
+        }
+
         if (FailNext > 0)
         {
             FailNext--;
@@ -30,6 +39,7 @@ public sealed partial class FakeEmailSender : IEmailSender
     {
         _sent.Clear();
         FailNext = 0;
+        TimeOutNext = 0;
     }
 
     /// <summary>Espera o Outbox processar (ele roda em background a cada 200 ms nos testes).</summary>

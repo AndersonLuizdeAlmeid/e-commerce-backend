@@ -32,6 +32,7 @@ Este diretório é a **fonte da verdade** do projeto. Todo código deve nascer d
 | 23 | [23-emails.md](23-emails.md) | E-mails transacionais, recuperação de senha |
 | 24 | [24-seo.md](24-seo.md) | SEO: renderização no servidor, sitemap, dados estruturados |
 | 25 | [25-processamento-assincrono.md](25-processamento-assincrono.md) | Outbox, jobs (cancelamento em 48 h, lembretes, reconciliação) |
+| 26 | [26-frontend-experiencia-e-design.md](26-frontend-experiencia-e-design.md) | Direção visual "Cartela & Expositor", componentes, telas e estados do frontend |
 | — | [entregas/](entregas/fase-2a-contas-e-emails.md) | Documento de cada entrega: objetivos, escopo e checklist de aceite |
 
 ## Convenções das specs

@@ -27,7 +27,7 @@ internal sealed class SendEmailHandler(
             var providerId = await sender.SendAsync(message, cancellationToken);
             await LogAsync(email, "Sent", providerId, cancellationToken);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception) when (!cancellationToken.IsCancellationRequested)
         {
             await LogAsync(email, "Failed", null, cancellationToken);
             throw;

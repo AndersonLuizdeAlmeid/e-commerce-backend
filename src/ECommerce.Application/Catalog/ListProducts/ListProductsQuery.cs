@@ -16,7 +16,8 @@ public sealed record ListProductsQuery(
     string? Search,
     IReadOnlyList<string> Colors,
     IReadOnlyList<string> Sizes,
-    string Sort) : IQuery<PagedResponse<ProductSummaryResponse>>
+    string Sort,
+    string? Collection = null) : IQuery<PagedResponse<ProductSummaryResponse>>
 {
     public const int DefaultPageSize = 20;
     public const int MaxPageSize = 100;
