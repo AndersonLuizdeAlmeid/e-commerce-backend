@@ -83,16 +83,18 @@ Exemplo `GET /products/camiseta-basica`:
 
 | Método | Rota | Acesso | Descrição |
 |--------|------|--------|-----------|
-| POST | `/quotes` | 🌐 | `{ postalCode, items: [{ variantId, quantity }] }` → opções (RF-032) |
-| GET | `/postal-codes/{cep}` | 🌐 | Endereço pelo CEP (proxy ViaCEP com cache) |
+| POST | `/quotes` | 🌐 | `{ postalCode, items: [{ variantId, quantity }] }` → opções (RF-032). CEP inválido → `400`; peça fora da loja → `422`; loja sem configuração → `503` `Shipping.NotConfigured` |
+| GET | `/postal-codes/{cep}` | 🌐 | Endereço pelo CEP (proxy ViaCEP com cache). CEP inexistente → `404`; serviço fora do ar → `503` |
 
 Resposta:
 ```json
 { "options": [
-  { "serviceCode": "PAC",   "name": "PAC",   "price": 0.00,  "originalPrice": 21.40, "deliveryDays": 7, "appliedRule": "Frete grátis acima de R$ 299" },
+  { "serviceCode": "PAC",   "name": "PAC",   "price": 21.40, "originalPrice": 21.40, "deliveryDays": 7 },
   { "serviceCode": "SEDEX", "name": "SEDEX", "price": 38.90, "originalPrice": 38.90, "deliveryDays": 3 }
-] }
+], "isFallback": false }
 ```
+
+`deliveryDays` já soma os dias de manuseio. Com o provedor fora do ar, `isFallback` é verdadeiro, os preços são os de contingência e `deliveryDays` é nulo. A Fase 3.4 acrescenta as regras: `appliedRules[]` e o aviso de frete grátis.
 
 ## 6. Carrinho — `/api/v1/cart`
 
@@ -165,7 +167,7 @@ Exemplo `POST /orders/{id}/payments` (PIX) → `201`:
 | GET | `/stock?lowStock=true&search=&page=` | Estoque por variação (busca também por código de barras). `lowStock` traz só o que está à venda |
 | POST | `/stock/{variantId}/movements` | `{ type: In\|Out\|Adjustment, quantity, reason }`: em `In` e `Out`, o que entra ou sai; em `Adjustment`, o novo saldo. Saldo negativo → `422` `Inventory.InsufficientStock` (RF-052) |
 | GET | `/stock/{variantId}/movements?page=` | Histórico: tipo, delta com sinal, motivo, autor e data |
-| GET/PUT | `/shipping/settings` | CEP de origem, manuseio, contingência (RF-058) |
+| GET/PUT | `/shipping/settings` | CEP de origem, manuseio, contingência e caixa padrão (RF-058). GET responde `204` enquanto não configurado |
 | GET/POST | `/shipping/rules` | Regras de frete |
 | PUT/DELETE | `/shipping/rules/{id}` | Editar/remover |
 | GET | `/orders?status&from&to&customerId&paymentMethod&page` | Pedidos (RF-053) |

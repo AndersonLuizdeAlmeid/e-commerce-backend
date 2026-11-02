@@ -1,6 +1,6 @@
 # Entrega — Fase 3: Estoque, sacola e frete
 
-**Status:** Planejada em 02/11/2026. **Fatias 3.1 e 3.2 implementadas e validadas com banco, API em container e build de produção em 02/11/2026** (seção 8); na 3.1 faltam a câmera e o leitor USB de verdade. Fatias 3.3 e 3.4 não iniciadas.
+**Status:** Planejada em 02/11/2026. **Fatias 3.1 e 3.2 implementadas e validadas com banco, API em container e build de produção em 02/11/2026** (seção 8); na 3.1 faltam a câmera e o leitor USB de verdade. **Fatia 3.3 implementada com provedor falso, sem validação contra o Melhor Envio de verdade**, que depende do token de sandbox. Fatia 3.4 não iniciada.
 **Repositórios:** `e-commerce-backend` e `e-commerce-frontend` (branch `feat/fase-3` nos dois).
 
 ## 1. Contexto
@@ -55,7 +55,8 @@ As specs deixam estes pontos abertos ou contraditórios. Cada linha traz a decis
 |--------|----------|-------|
 | `V0013__inventory_stock_movements.sql` | `inventory.stock_movements` e índice (arquivo 05) | 3.1 |
 | `V0014__carts.sql` | Schema `carts`, `carts.carts` e `carts.cart_items` | 3.2 |
-| `V0015__shipping.sql` | Schema `shipping`, `settings` (com peso e medidas da caixa, P9) e `rules` | 3.3 / 3.4 |
+| `V0015__shipping_settings.sql` | Schema `shipping` e `settings` (com peso e medidas da caixa, P9) | 3.3 |
+| `V0016__shipping_rules.sql` | `shipping.rules` | 3.4 |
 | Seed `S0005__example_shipping.sql` | Linha de `settings` só para desenvolvimento, **sem nenhuma regra** (D08) | 3.3 |
 
 Cada script novo entra no `database/gerar-scripts.sh`, que gera um arquivo por fatia (`database/fase-3-1-schema.sql`, e assim por diante), para quem já rodou o primeiro não travar em "Script já aplicado". O saldo que já existe não ganha movimentação retroativa: o histórico começa nesta fase. A V0013 também garante uma linha de saldo para toda variação.
@@ -152,9 +153,9 @@ Primeiro só build (A), depois banco pelo DBeaver (B) e por último execução (
 
 | # | Passo | Esperado |
 |---|-------|----------|
-| B1 | Rodar os `database/fase-3-*-schema.sql`, em ordem, num banco com a 2B | `COMMIT`; V0013–V0015 em `public.schemaversions` |
+| B1 | Rodar os `database/fase-3-*-schema.sql`, em ordem, num banco com a 2B | `COMMIT`; V0013–V0016 em `public.schemaversions` |
 | B2 | Rodar B1 de novo | para com "Script já aplicado" |
-| B3 | Rodar `database/fase-3-dados-exemplo.sql` | uma linha em `shipping.settings`, nenhuma regra |
+| B3 | Rodar `database/fase-3-3-dados-exemplo.sql` | uma linha em `shipping.settings`, nenhuma regra |
 | B4 | Rodar `ECommerce.Migrator` depois | "No new scripts" |
 
 ### Etapa C — execução
@@ -187,7 +188,7 @@ Primeiro só build (A), depois banco pelo DBeaver (B) e por último execução (
 |-------|----------|
 | 3.1 — Estoque | Implementada e validada em 02/11/2026; falta leitura com aparelho real |
 | 3.2 — Sacola | Implementada e validada em 02/11/2026; falta aprovar o visual |
-| 3.3 — Cotação de frete | Não iniciada |
+| 3.3 — Cotação de frete | Implementada em 02/11/2026 com provedor falso. **Não fecha sem o token do Melhor Envio** |
 | 3.4 — Regras de frete | Não iniciada |
 
 ### 3.1 — Validação (02/11/2026)
@@ -239,6 +240,37 @@ Também conferido: "desfazer" ao remover, foco no seletor ao tocar em "Escolha o
 - A home troca "Ver a peça" pelo botão de adicionar; a cartela inteira continua sendo o link da peça.
 
 **Não verificado:** toque em celular de verdade. O visual da sacola segue o arquivo 26 §4.5, com uma versão só; falta a aprovação da loja.
+
+### 3.3 — Validação (02/11/2026)
+
+**A cotação real não foi testada:** não há token do Melhor Envio. A loja rodou com `Shipping:Provider=Fake`, que só existe em Development e nos testes; em produção a API nem sobe com ele. O adaptador real foi exercitado contra um servidor simulado (WireMock), com o pipeline de resiliência de verdade e respostas escritas a partir da [documentação](https://docs.melhorenvio.com.br/reference/calculo-de-fretes-por-produtos).
+
+| # | Resultado |
+|---|-----------|
+| A1, A2 | ✅ 0 avisos e 0 erros; formatação sem alterações |
+| A3, A4 | ✅ lint, typecheck e 148 testes do frontend |
+| A5 | ✅ `npm run build` contra o stub e contra a API real |
+| B1–B3 | ✅ `fase-3-3-schema.sql` aplica e, repetido, para com "Script já aplicado"; `fase-3-3-dados-exemplo.sql` cria a configuração, sem regras |
+| B4 | ✅ O `ECommerce.Migrator` responde "No new scripts" |
+| C1 | ✅ API em container. .NET: Domain 112, Application 32, Arquitetura 8, Funcionais 217 |
+| C11 | ⏳ Com o provedor falso: PAC e SEDEX com preço e prazo somando o manuseio, no produto e na sacola; a sacola recalcula ao mudar a quantidade. **Falta o sandbox** |
+| C12 | ✅ CEP incompleto recusado na tela; inválido responde 400 na API |
+| C13 | ⏳ Contingência e retorno sem esperar os 30 min cobertos por teste funcional. Timeout, nova tentativa e erros do provedor cobertos com WireMock. **Falta derrubar o provedor real** |
+| C14 | ⏳ A montagem do pacote (bolsa e anel) tem teste de domínio. **Falta comparar o preço com o balcão** |
+| ViaCEP | ✅ Chamada real pelo container: CEP 01310-100 devolve Avenida Paulista, São Paulo |
+| RF-058 | ✅ Sem configuração, a loja oferece falar com a MO (503 na API). Salvo pelo painel, a cotação volta a funcionar; o formulário recusa valores inválidos |
+
+**Achado na validação:** o aviso "Configuração salva" não aparecia, porque o formulário era remontado ao recarregar os dados.
+
+**Decisões de implementação:**
+- `ErrorType.Unavailable` novo, mapeado para 503.
+- Contingência não tem prazo: a resposta traz `deliveryDays` nulo, e a loja mostra "Prazo a confirmar" e avisa que o valor é estimado.
+- CEP recusado pelo provedor responde 400, sem contingência, para não dar preço a um CEP que não existe.
+- As medidas vão arredondadas para cima, porque a API do Melhor Envio pede inteiros.
+- Mudar a configuração não precisa limpar cache: origem e pacote estão na chave da cotação, e o manuseio é somado depois dela.
+- O provedor exige `Shipping:MelhorEnvio:Token` e `UserAgent` (nome da aplicação e e-mail de contato) para a API subir fora de Development.
+
+**Para fechar a 3.3:** configurar o token e o User-Agent, trocar para `MelhorEnvio`, conferir C11, C13 e C14, gravar respostas reais nos testes do adaptador e confirmar como o serviço não atendido vem na resposta, ponto que a documentação não descreve e que hoje é tratado por `error` ou falta de preço.
 
 ## 9. Riscos e pontos de atenção
 

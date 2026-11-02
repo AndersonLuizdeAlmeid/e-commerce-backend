@@ -18,6 +18,7 @@
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="Respawn" />
+    <PackageReference Include="WireMock.Net" />
   </ItemGroup>
 
   <ItemGroup>

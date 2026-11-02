@@ -13,6 +13,7 @@ internal static class RateLimitPolicies
     public const string PublicRead = "public-read";
     public const string CustomerWrite = "customer-write";
     public const string AdminWrite = "admin-write";
+    public const string ShippingQuote = "shipping-quote";
 }
 
 /// <summary>Seção <c>RateLimiting</c>: valores ajustáveis sem recompilar (arquivo 11 §3).</summary>
@@ -34,6 +35,9 @@ internal sealed class RateLimitingSettings
 
     /// <summary>Painel: edição de grade e leitura de código de barras em sequência pedem um balde maior que o do cliente.</summary>
     public TokenBucket AdminWrite { get; init; } = new(120, 60, 10);
+
+    /// <summary>Cada cotação pode custar uma chamada ao provedor de frete (arquivo 11).</summary>
+    public FixedWindow ShippingQuote { get; init; } = new(20, 60);
 
     public sealed record FixedWindow(int PermitLimit, int WindowSeconds);
 
@@ -80,6 +84,15 @@ internal static partial class RateLimitingExtensions
 
             options.AddPolicy(RateLimitPolicies.AdminWrite, context =>
                 RateLimitPartition.GetTokenBucketLimiter(PartitionKey(context), _ => TokenBucket(settings.AdminWrite)));
+
+            options.AddPolicy(RateLimitPolicies.ShippingQuote, context =>
+                RateLimitPartition.GetSlidingWindowLimiter(PartitionKey(context), _ => new SlidingWindowRateLimiterOptions
+                {
+                    PermitLimit = settings.ShippingQuote.PermitLimit,
+                    Window = TimeSpan.FromSeconds(settings.ShippingQuote.WindowSeconds),
+                    SegmentsPerWindow = 6,
+                    QueueLimit = 0,
+                }));
         });
 
         return services;

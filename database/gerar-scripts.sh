@@ -100,3 +100,11 @@ gen database/fase-3-1-schema.sql schemaversions "$P.Migrations" \
 gen database/fase-3-2-schema.sql schemaversions "$P.Migrations" \
   "Fase 3.2 — sacola do cliente" "$P.Migrations.V0013__inventory_stock_movements.sql" \
   $M/V0014__carts.sql
+
+gen database/fase-3-3-schema.sql schemaversions "$P.Migrations" \
+  "Fase 3.3 — configuração de frete" "$P.Migrations.V0014__carts.sql" \
+  $M/V0015__shipping_settings.sql
+
+gen database/fase-3-3-dados-exemplo.sql seedversions "$P.Seeds.Development" \
+  "Fase 3.3 — configuração de frete de exemplo, sem regras (SOMENTE Development)" "$P.Migrations.V0015__shipping_settings.sql" \
+  $S/S0005__example_shipping.sql

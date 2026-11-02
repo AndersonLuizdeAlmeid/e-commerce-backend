@@ -1,4 +1,5 @@
 using ECommerce.Application.Abstractions.Images;
+using ECommerce.Application.Abstractions.Shipping;
 using ECommerce.Infrastructure.Notifications;
 using ECommerce.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
@@ -42,7 +43,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         _respawner = await Respawner.CreateAsync(connection, new RespawnerOptions
         {
             DbAdapter = DbAdapter.Postgres,
-            SchemasToInclude = ["catalog", "inventory", "carts", "identity", "customers", "messaging", "notifications"],
+            SchemasToInclude = ["catalog", "inventory", "carts", "shipping", "identity", "customers", "messaging", "notifications"],
         });
     }
 
@@ -67,6 +68,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         }
 
         Emails.Clear();
+        ShippingQuotes.Reset();
     }
 
     /// <summary>Altera o banco por fora da API (simula escrita do admin ou de outra instância).</summary>
@@ -84,6 +86,10 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
     public FakeImageStorage Images { get; } = new();
 
+    public FakeShippingProviders ShippingQuotes { get; } = new();
+
+    public FakeShippingProviders PostalCodes => ShippingQuotes;
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
@@ -100,9 +106,15 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         builder.UseSetting("RateLimiting:PublicRead:PermitLimit", "100000");
         builder.UseSetting("RateLimiting:CustomerWrite:TokenLimit", "100000");
         builder.UseSetting("RateLimiting:AdminWrite:TokenLimit", "100000");
+        builder.UseSetting("RateLimiting:ShippingQuote:PermitLimit", "100000");
+        builder.UseSetting("Shipping:Provider", "Fake");
 
         builder.ConfigureTestServices(services =>
         {
+            services.RemoveAll<IShippingQuoteProvider>();
+            services.AddSingleton<IShippingQuoteProvider>(ShippingQuotes);
+            services.RemoveAll<IPostalCodeLookup>();
+            services.AddSingleton<IPostalCodeLookup>(PostalCodes);
             services.RemoveAll<IEmailSender>();
             services.AddSingleton<IEmailSender>(Emails);
             services.RemoveAll<IImageStorage>();
