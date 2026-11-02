@@ -1,3 +1,4 @@
+using ECommerce.Application.Abstractions.Images;
 using ECommerce.Infrastructure.Notifications;
 using ECommerce.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
@@ -47,9 +48,24 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
     public async Task ResetDatabaseAsync()
     {
-        await using var connection = new NpgsqlConnection(ConnectionString);
-        await connection.OpenAsync();
-        await _respawner.ResetAsync(connection);
+        // O TRUNCATE do Respawn pode travar email_log enquanto o Outbox, com a linha da mensagem presa, grava nela por
+        // outra conexão. O Postgres não enxerga esse ciclo; desistir da espera libera o Outbox para terminar.
+        for (var attempt = 1; ; attempt++)
+        {
+            await using var connection = new NpgsqlConnection(ConnectionString);
+            await connection.OpenAsync();
+            await Dapper.SqlMapper.ExecuteAsync(connection, "SET lock_timeout = '2s'");
+            try
+            {
+                await _respawner.ResetAsync(connection);
+                break;
+            }
+            catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.LockNotAvailable && attempt < 5)
+            {
+                // Tenta de novo com conexão nova.
+            }
+        }
+
         Emails.Clear();
     }
 
@@ -66,6 +82,8 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         return await Dapper.SqlMapper.QuerySingleOrDefaultAsync<T>(connection, sql, parameters);
     }
 
+    public FakeImageStorage Images { get; } = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
@@ -81,11 +99,14 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         builder.UseSetting("RateLimiting:AuthRefresh:PermitLimit", "100000");
         builder.UseSetting("RateLimiting:PublicRead:PermitLimit", "100000");
         builder.UseSetting("RateLimiting:CustomerWrite:TokenLimit", "100000");
+        builder.UseSetting("RateLimiting:AdminWrite:TokenLimit", "100000");
 
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<IEmailSender>();
             services.AddSingleton<IEmailSender>(Emails);
+            services.RemoveAll<IImageStorage>();
+            services.AddSingleton<IImageStorage>(Images);
         });
     }
 

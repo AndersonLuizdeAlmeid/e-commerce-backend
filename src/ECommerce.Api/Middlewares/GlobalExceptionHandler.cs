@@ -11,6 +11,23 @@ internal sealed class GlobalExceptionHandler(
     public async ValueTask<bool> TryHandleAsync(
         HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
     {
+        // Em Development o framework lança em vez de responder 400 ao corpo inválido; o status continua sendo o dele.
+        if (exception is BadHttpRequestException badRequest)
+        {
+            httpContext.Response.StatusCode = badRequest.StatusCode;
+            return await problemDetailsService.TryWriteAsync(new ProblemDetailsContext
+            {
+                HttpContext = httpContext,
+                Exception = exception,
+                ProblemDetails = new ProblemDetails
+                {
+                    Status = badRequest.StatusCode,
+                    Title = "Requisição inválida",
+                    Detail = "Não foi possível ler os dados enviados.",
+                },
+            });
+        }
+
         logger.LogError(exception, "Erro não tratado em {Method} {Path}", httpContext.Request.Method, httpContext.Request.Path);
 
         httpContext.Response.StatusCode = StatusCodes.Status500InternalServerError;

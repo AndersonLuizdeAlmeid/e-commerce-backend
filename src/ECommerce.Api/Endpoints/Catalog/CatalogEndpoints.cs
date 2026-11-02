@@ -4,7 +4,9 @@ using ECommerce.Application.Abstractions.Paging;
 using ECommerce.Application.Catalog;
 using ECommerce.Application.Catalog.GetCatalogFilters;
 using ECommerce.Application.Catalog.GetCategoryBySlug;
+using ECommerce.Application.Catalog.GetCollections;
 using ECommerce.Application.Catalog.GetProductBySlug;
+using ECommerce.Application.Catalog.GetShowcase;
 using ECommerce.Application.Catalog.GetSitemap;
 using ECommerce.Application.Catalog.ListCategories;
 using ECommerce.Application.Catalog.ListProducts;
@@ -29,6 +31,25 @@ internal sealed class CatalogEndpoints : IEndpointGroup
         group.MapGet("/categories/{slug}", GetCategoryBySlug)
             .WithName("GetCategoryBySlug")
             .WithSummary("Dados da categoria ativa, com texto e SEO")
+            .WithDescription("Slug antigo → 301 com Location para o slug atual (RN-025).")
+            .Produces(StatusCodes.Status301MovedPermanently)
+            .WithPublicHttpCache();
+
+        group.MapGet("/collections", ListCollections)
+            .WithName("ListCollections")
+            .WithSummary("Coleções ativas, na ordem da navegação (RF-024)")
+            .WithPublicHttpCache();
+
+        group.MapGet("/collections/{slug}", GetCollectionBySlug)
+            .WithName("GetCollectionBySlug")
+            .WithSummary("Dados da coleção ativa: texto, SEO, capa e tema das cartelas (RF-024)")
+            .WithDescription("Slug antigo → 301 com Location para o slug atual (CA4).")
+            .Produces(StatusCodes.Status301MovedPermanently)
+            .WithPublicHttpCache();
+
+        group.MapGet("/showcase", GetShowcase)
+            .WithName("GetShowcase")
+            .WithSummary("Peça em destaque e ocasião vigente, para a home (RF-025)")
             .WithPublicHttpCache();
 
         group.MapGet("/products", ListProducts)
@@ -66,12 +87,55 @@ internal sealed class CatalogEndpoints : IEndpointGroup
         return result.ToHttpResult();
     }
 
-    private static async Task<Results<Ok<CategoryDetailsResponse>, ProblemHttpResult>> GetCategoryBySlug(
+    private static async Task<Results<Ok<CategoryDetailsResponse>, RedirectHttpResult, ProblemHttpResult>> GetCategoryBySlug(
         string slug,
         IQueryHandler<GetCategoryBySlugQuery, CategoryDetailsResponse> handler,
+        IQueryHandler<ResolveCategorySlugQuery, string> resolver,
         CancellationToken cancellationToken)
     {
         var result = await handler.Handle(new GetCategoryBySlugQuery(slug), cancellationToken);
+        if (result.IsSuccess)
+        {
+            return TypedResults.Ok(result.Value);
+        }
+
+        var moved = await resolver.Handle(new ResolveCategorySlugQuery(slug), cancellationToken);
+        return moved.IsSuccess
+            ? TypedResults.Redirect($"/api/v1/catalog/categories/{Uri.EscapeDataString(moved.Value)}", permanent: true)
+            : result.Error.ToProblem();
+    }
+
+    private static async Task<Results<Ok<IReadOnlyList<CollectionSummaryResponse>>, ProblemHttpResult>> ListCollections(
+        IQueryHandler<ListCollectionsQuery, IReadOnlyList<CollectionSummaryResponse>> handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.Handle(new ListCollectionsQuery(), cancellationToken);
+        return result.ToHttpResult();
+    }
+
+    private static async Task<Results<Ok<CollectionDetailsResponse>, RedirectHttpResult, ProblemHttpResult>> GetCollectionBySlug(
+        string slug,
+        IQueryHandler<GetCollectionBySlugQuery, CollectionDetailsResponse> handler,
+        IQueryHandler<ResolveCollectionSlugQuery, string> resolver,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.Handle(new GetCollectionBySlugQuery(slug), cancellationToken);
+        if (result.IsSuccess)
+        {
+            return TypedResults.Ok(result.Value);
+        }
+
+        var moved = await resolver.Handle(new ResolveCollectionSlugQuery(slug), cancellationToken);
+        return moved.IsSuccess
+            ? TypedResults.Redirect($"/api/v1/catalog/collections/{Uri.EscapeDataString(moved.Value)}", permanent: true)
+            : result.Error.ToProblem();
+    }
+
+    private static async Task<Results<Ok<ShowcaseResponse>, ProblemHttpResult>> GetShowcase(
+        IQueryHandler<GetShowcaseQuery, ShowcaseResponse> handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.Handle(new GetShowcaseQuery(), cancellationToken);
         return result.ToHttpResult();
     }
 
@@ -86,10 +150,11 @@ internal sealed class CatalogEndpoints : IEndpointGroup
         string? search = null,
         string[]? colors = null,
         string[]? sizes = null,
-        string sort = ListProductsQuery.DefaultSort)
+        string sort = ListProductsQuery.DefaultSort,
+        string? collection = null)
     {
         var query = new ListProductsQuery(
-            page, pageSize, category, minPrice, maxPrice, search, colors ?? [], sizes ?? [], sort);
+            page, pageSize, category, minPrice, maxPrice, search, colors ?? [], sizes ?? [], sort, collection);
 
         var result = await handler.Handle(query, cancellationToken);
         return result.ToHttpResult();
@@ -121,9 +186,10 @@ internal sealed class CatalogEndpoints : IEndpointGroup
     private static async Task<Results<Ok<CatalogFiltersResponse>, ProblemHttpResult>> GetFilters(
         IQueryHandler<GetCatalogFiltersQuery, CatalogFiltersResponse> handler,
         CancellationToken cancellationToken,
-        string? category = null)
+        string? category = null,
+        string? collection = null)
     {
-        var result = await handler.Handle(new GetCatalogFiltersQuery(category), cancellationToken);
+        var result = await handler.Handle(new GetCatalogFiltersQuery(category, collection), cancellationToken);
         return result.ToHttpResult();
     }
 

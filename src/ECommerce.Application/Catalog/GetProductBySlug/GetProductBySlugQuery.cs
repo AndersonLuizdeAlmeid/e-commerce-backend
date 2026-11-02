@@ -30,7 +30,8 @@ public sealed record ProductDetailsResponse(
     IReadOnlyList<SizeResponse> Sizes,
     IReadOnlyList<ProductVariantResponse> Variants,
     IReadOnlyList<ProductImageResponse> Images,
-    DateTime UpdatedAt);
+    DateTime UpdatedAt,
+    VariantLabelsResponse VariantLabels);
 
 public sealed record ProductCategoryResponse(string Slug, string Name);
 

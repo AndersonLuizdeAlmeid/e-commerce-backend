@@ -12,6 +12,7 @@ internal static class RateLimitPolicies
     public const string AuthRefresh = "auth-refresh";
     public const string PublicRead = "public-read";
     public const string CustomerWrite = "customer-write";
+    public const string AdminWrite = "admin-write";
 }
 
 /// <summary>Seção <c>RateLimiting</c>: valores ajustáveis sem recompilar (arquivo 11 §3).</summary>
@@ -30,6 +31,9 @@ internal sealed class RateLimitingSettings
     public FixedWindow AuthRefresh { get; init; } = new(20, 60);
     public FixedWindow PublicRead { get; init; } = new(120, 60);
     public TokenBucket CustomerWrite { get; init; } = new(30, 10, 10);
+
+    /// <summary>Painel: edição de grade e leitura de código de barras em sequência pedem um balde maior que o do cliente.</summary>
+    public TokenBucket AdminWrite { get; init; } = new(120, 60, 10);
 
     public sealed record FixedWindow(int PermitLimit, int WindowSeconds);
 
@@ -73,6 +77,9 @@ internal static partial class RateLimitingExtensions
 
             options.AddPolicy(RateLimitPolicies.CustomerWrite, context =>
                 RateLimitPartition.GetTokenBucketLimiter(PartitionKey(context), _ => TokenBucket(settings.CustomerWrite)));
+
+            options.AddPolicy(RateLimitPolicies.AdminWrite, context =>
+                RateLimitPartition.GetTokenBucketLimiter(PartitionKey(context), _ => TokenBucket(settings.AdminWrite)));
         });
 
         return services;

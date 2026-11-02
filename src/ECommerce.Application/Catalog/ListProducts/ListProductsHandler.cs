@@ -21,8 +21,14 @@ internal sealed class ListProductsHandler(IDbConnectionFactory connectionFactory
               FROM catalog.products p
               JOIN catalog.categories c       ON c.id = p.category_id AND c.is_active
               JOIN catalog.product_variants v ON v.product_id = p.id AND v.is_active
+              LEFT JOIN catalog.categories parent ON parent.id = c.parent_id
              WHERE p.is_active
-               AND (@Category::text IS NULL OR c.slug = @Category)
+               AND (@Category::text IS NULL OR c.slug = @Category OR parent.slug = @Category)
+               AND (@Collection::text IS NULL OR EXISTS (
+                    SELECT 1
+                      FROM catalog.product_collections pc
+                      JOIN catalog.collections col ON col.id = pc.collection_id AND col.is_active
+                     WHERE pc.product_id = p.id AND col.slug = @Collection))
                AND (@Search::text IS NULL
                     OR public.immutable_unaccent(lower(p.name)) LIKE '%' || public.immutable_unaccent(lower(@Search)) || '%')
                AND ((cardinality(@Colors::text[]) = 0 AND cardinality(@Sizes::text[]) = 0) OR EXISTS (
@@ -40,20 +46,6 @@ internal sealed class ListProductsHandler(IDbConnectionFactory connectionFactory
              WHERE (@MinPrice::numeric IS NULL OR price_from >= @MinPrice)
                AND (@MaxPrice::numeric IS NULL OR price_from <= @MaxPrice)
         )
-        """;
-
-    private const string DetailsSql = """
-        SELECT DISTINCT v.product_id, c.id, c.name, c.slug, c.hex
-          FROM catalog.product_variants v
-          JOIN catalog.colors c ON c.id = v.color_id
-         WHERE v.product_id = ANY (@Ids) AND v.is_active
-         ORDER BY c.name;
-
-        SELECT DISTINCT ON (i.product_id) i.product_id, i.url, i.alt, i.color_id
-          FROM catalog.product_images i
-          LEFT JOIN catalog.colors c ON c.id = i.color_id
-         WHERE i.product_id = ANY (@Ids)
-         ORDER BY i.product_id, c.name NULLS FIRST, i.position;
         """;
 
     public async Task<Result<PagedResponse<ProductSummaryResponse>>> Handle(
@@ -89,6 +81,7 @@ internal sealed class ListProductsHandler(IDbConnectionFactory connectionFactory
         var parameters = new
         {
             filters.Category,
+            filters.Collection,
             filters.Search,
             Colors = filters.Colors,
             Sizes = filters.Sizes,
@@ -99,48 +92,22 @@ internal sealed class ListProductsHandler(IDbConnectionFactory connectionFactory
         };
 
         long totalItems;
-        List<ProductRow> rows;
+        List<ProductSummaries.ProductRow> rows;
         using (var grid = await connection.QueryMultipleAsync(
             new CommandDefinition(sql, parameters, cancellationToken: cancellationToken)))
         {
             totalItems = await grid.ReadSingleAsync<long>();
-            rows = (await grid.ReadAsync<ProductRow>()).AsList();
+            rows = (await grid.ReadAsync<ProductSummaries.ProductRow>()).AsList();
         }
 
-        if (rows.Count == 0)
-        {
-            return PagedResponse.Create<ProductSummaryResponse>([], filters.Page, filters.PageSize, (int)totalItems);
-        }
-
-        var ids = rows.Select(row => row.Id).ToArray();
-        ILookup<Guid, ColorResponse> colorsByProduct;
-        Dictionary<Guid, ProductImageResponse> imageByProduct;
-        using (var grid = await connection.QueryMultipleAsync(
-            new CommandDefinition(DetailsSql, new { Ids = ids }, cancellationToken: cancellationToken)))
-        {
-            colorsByProduct = (await grid.ReadAsync<ColorRow>())
-                .ToLookup(color => color.ProductId, color => new ColorResponse(color.Id, color.Name, color.Slug, color.Hex));
-            imageByProduct = (await grid.ReadAsync<ImageRow>())
-                .ToDictionary(image => image.ProductId, image => new ProductImageResponse(image.Url, image.Alt, image.ColorId));
-        }
-
-        var items = rows
-            .Select(row => new ProductSummaryResponse(
-                row.Id,
-                row.Slug,
-                row.Name,
-                row.CategorySlug,
-                row.PriceFrom,
-                colorsByProduct[row.Id].ToList(),
-                imageByProduct.GetValueOrDefault(row.Id)))
-            .ToList();
-
+        var items = await ProductSummaries.ToSummariesAsync(connection, rows, cancellationToken);
         return PagedResponse.Create(items, filters.Page, filters.PageSize, (int)totalItems);
     }
 
     private static NormalizedFilters Normalize(ListProductsQuery query)
     {
         var category = string.IsNullOrWhiteSpace(query.Category) ? null : query.Category.Trim().ToLowerInvariant();
+        var collection = string.IsNullOrWhiteSpace(query.Collection) ? null : query.Collection.Trim().ToLowerInvariant();
         var search = string.IsNullOrWhiteSpace(query.Search) ? null : EscapeLike(query.Search.Trim());
         var colors = query.Colors.Select(c => c.Trim().ToLowerInvariant()).Where(c => c.Length > 0).Distinct().Order(StringComparer.Ordinal).ToArray();
         var sizes = query.Sizes.Select(s => s.Trim()).Where(s => s.Length > 0).Distinct().Order(StringComparer.Ordinal).ToArray();
@@ -150,6 +117,7 @@ internal sealed class ListProductsHandler(IDbConnectionFactory connectionFactory
             query.Page.ToString(CultureInfo.InvariantCulture),
             query.PageSize.ToString(CultureInfo.InvariantCulture),
             category,
+            collection,
             search,
             string.Join(',', colors),
             string.Join(',', sizes),
@@ -158,7 +126,7 @@ internal sealed class ListProductsHandler(IDbConnectionFactory connectionFactory
             query.Sort);
 
         return new NormalizedFilters(
-            query.Page, query.PageSize, category, search, colors, sizes, query.MinPrice, query.MaxPrice, query.Sort, cacheKey);
+            query.Page, query.PageSize, category, collection, search, colors, sizes, query.MinPrice, query.MaxPrice, query.Sort, cacheKey);
     }
 
     // O termo vai como parâmetro; só escapamos os curingas do LIKE para "50%" não virar padrão.
@@ -171,6 +139,7 @@ internal sealed class ListProductsHandler(IDbConnectionFactory connectionFactory
         int Page,
         int PageSize,
         string? Category,
+        string? Collection,
         string? Search,
         string[] Colors,
         string[] Sizes,
@@ -178,30 +147,4 @@ internal sealed class ListProductsHandler(IDbConnectionFactory connectionFactory
         decimal? MaxPrice,
         string Sort,
         string CacheKey);
-
-    private sealed class ProductRow
-    {
-        public Guid Id { get; init; }
-        public string Slug { get; init; } = string.Empty;
-        public string Name { get; init; } = string.Empty;
-        public string CategorySlug { get; init; } = string.Empty;
-        public decimal PriceFrom { get; init; }
-    }
-
-    private sealed class ColorRow
-    {
-        public Guid ProductId { get; init; }
-        public Guid Id { get; init; }
-        public string Name { get; init; } = string.Empty;
-        public string Slug { get; init; } = string.Empty;
-        public string Hex { get; init; } = string.Empty;
-    }
-
-    private sealed class ImageRow
-    {
-        public Guid ProductId { get; init; }
-        public string Url { get; init; } = string.Empty;
-        public string Alt { get; init; } = string.Empty;
-        public Guid? ColorId { get; init; }
-    }
 }

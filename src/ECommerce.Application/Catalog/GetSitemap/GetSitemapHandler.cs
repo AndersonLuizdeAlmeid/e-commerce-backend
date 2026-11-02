@@ -21,6 +21,11 @@ internal sealed class GetSitemapHandler(IDbConnectionFactory connectionFactory, 
          WHERE p.is_active
            AND EXISTS (SELECT 1 FROM catalog.product_variants v WHERE v.product_id = p.id AND v.is_active)
          ORDER BY p.slug;
+
+        SELECT slug, updated_at
+          FROM catalog.collections
+         WHERE is_active
+         ORDER BY slug;
         """;
 
     public async Task<Result<SitemapResponse>> Handle(GetSitemapQuery query, CancellationToken cancellationToken)
@@ -37,7 +42,9 @@ internal sealed class GetSitemapHandler(IDbConnectionFactory connectionFactory, 
         var categories = (await grid.ReadAsync<EntryRow>()).Select(ToResponse).ToList();
         var products = (await grid.ReadAsync<EntryRow>()).Select(ToResponse).ToList();
 
-        return new SitemapResponse(categories, products);
+        var collections = (await grid.ReadAsync<EntryRow>()).Select(ToResponse).ToList();
+
+        return new SitemapResponse(categories, products, collections);
     }
 
     private static SitemapEntryResponse ToResponse(EntryRow row) =>

@@ -4,11 +4,14 @@ using Dapper;
 using ECommerce.Application.Abstractions.Authentication;
 using ECommerce.Application.Abstractions.Caching;
 using ECommerce.Application.Abstractions.Data;
+using ECommerce.Application.Abstractions.Images;
 using ECommerce.Application.Abstractions.Outbox;
+using ECommerce.Domain.Catalog;
 using ECommerce.Domain.Customers;
 using ECommerce.Domain.Identity;
 using ECommerce.Infrastructure.Authentication;
 using ECommerce.Infrastructure.Caching;
+using ECommerce.Infrastructure.Images;
 using ECommerce.Infrastructure.Jobs;
 using ECommerce.Infrastructure.Messaging;
 using ECommerce.Infrastructure.Notifications;
@@ -56,6 +59,15 @@ public static class DependencyInjection
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
         services.AddScoped<IUserTokenRepository, UserTokenRepository>();
         services.AddScoped<ICustomerRepository, CustomerRepository>();
+        services.AddScoped<ICategoryRepository, CategoryRepository>();
+        services.AddScoped<ISlugHistory, SlugHistoryRepository>();
+        services.AddScoped<IColorRepository, ColorRepository>();
+        services.AddScoped<ISizeRepository, SizeRepository>();
+        services.AddScoped<IProductRepository, ProductRepository>();
+        services.AddScoped<IProductImageRepository, ProductImageRepository>();
+        services.AddScoped<ICollectionRepository, CollectionRepository>();
+        services.AddScoped<IOccasionRepository, OccasionRepository>();
+        services.AddScoped<IShowcaseFeaturedRepository, ShowcaseFeaturedRepository>();
     }
 
     private static void AddCaching(IServiceCollection services, IConfiguration configuration)
@@ -100,6 +112,17 @@ public static class DependencyInjection
     private static void AddMessaging(IServiceCollection services, IConfiguration configuration)
     {
         services.AddOptions<OutboxSettings>().Bind(configuration.GetSection(OutboxSettings.SectionName));
+
+        // Escritas do admin no catálogo: cache da API + revalidação das páginas do Next (entrega 2B §3.2).
+        services.AddOptions<StorefrontSettings>().Bind(configuration.GetSection(StorefrontSettings.SectionName));
+        services.AddHttpClient<CatalogChangedHandler>(client => client.Timeout = TimeSpan.FromSeconds(10));
+        services.AddScoped<IOutboxMessageHandler>(sp => sp.GetRequiredService<CatalogChangedHandler>());
+
+        // Fotos do catálogo (RF-061, arquivo 20 D06): R2 em produção, RustFS em desenvolvimento.
+        services.AddOptions<ImageStorageSettings>().Bind(configuration.GetSection(ImageStorageSettings.SectionName));
+        services.AddSingleton<IImageStorage, S3ImageStorage>();
+        services.AddSingleton<IImageProcessor, MagickImageProcessor>();
+        services.AddScoped<IOutboxMessageHandler, DeleteStoredImageHandler>();
         services.AddScoped<IOutbox, OutboxWriter>();
         services.AddScoped<IOutboxMessageHandler, SendEmailHandler>();
         services.AddHostedService<OutboxProcessor>();

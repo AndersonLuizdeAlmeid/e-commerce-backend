@@ -18,7 +18,8 @@ WORKDIR /app
 COPY --from=build /out/migrator .
 ENTRYPOINT ["dotnet", "ECommerce.Migrator.dll"]
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled AS api
+# "extra": a chiseled comum não tem ICU. Sem ele, a API nem sobe (cultura pt-BR) e o slug perde as letras acentuadas.
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled-extra AS api
 WORKDIR /app
 COPY --from=build /out/api .
 ENV ASPNETCORE_HTTP_PORTS=8080

@@ -21,7 +21,7 @@
 | Estado local | Context; **Zustand** para o carrinho do visitante |
 | Formulários | **React Hook Form** + **Zod** a partir do painel admin (2B). As telas de conta da 2A usam formulário nativo com validação em `features/auth/validation.ts` |
 | Tipos da API | Gerados do OpenAPI (`openapi-typescript`) |
-| Estilo | **Tailwind CSS** + primitivos headless (**Radix**) com identidade própria, sem o visual padrão do shadcn/ui (arquivo 20, T09). Direção de arte definida com a skill `impeccable` antes das telas da 2B |
+| Estilo | **Tailwind CSS** + primitivos headless (**Radix**) com identidade própria, sem o visual padrão do shadcn/ui (arquivo 20, T09). Direção de arte **"Cartela & Expositor"**, telas e componentes no arquivo 26 |
 | Pagamento | SDK/componente da plataforma escolhida (ex.: Mercado Pago Bricks) para capturar o cartão sem passar pela loja |
 | Testes | **Vitest** + **Testing Library** + **MSW**; **Playwright** para E2E; **Lighthouse CI** |
 | Qualidade | ESLint, Prettier, `tsc --noEmit` no CI |

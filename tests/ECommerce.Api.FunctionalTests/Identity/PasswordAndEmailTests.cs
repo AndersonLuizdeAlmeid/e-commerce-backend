@@ -141,4 +141,22 @@ public sealed class PasswordAndEmailTests(ApiFactory factory) : FunctionalTest(f
         await Factory.ExecuteSqlAsync("UPDATE messaging.outbox_messages SET next_attempt_at = now()");
         await Factory.Emails.WaitForAsync("maria@loja.teste", "Bem-vindo");
     }
+
+    [Fact, Trait("Spec", "23-OUTBOX")]
+    public async Task Outbox_WhenProviderTimesOut_RetriesLaterAndKeepsProcessing()
+    {
+        Factory.Emails.TimeOutNext = 1;
+
+        (await AuthClient.RegisteredAsync(Factory, "maria@loja.teste")).Dispose();
+        await Task.Delay(1000, CancellationToken);
+
+        var attempts = await Factory.QuerySingleAsync<int>("SELECT attempts FROM messaging.outbox_messages");
+        attempts.ShouldBe(1);
+        var logged = await Factory.QuerySingleAsync<string>("SELECT status FROM notifications.email_log");
+        logged.ShouldBe("Failed");
+
+        // O processador continua vivo: a nova tentativa sai sem reiniciar nada.
+        await Factory.ExecuteSqlAsync("UPDATE messaging.outbox_messages SET next_attempt_at = now()");
+        await Factory.Emails.WaitForAsync("maria@loja.teste", "Bem-vindo");
+    }
 }

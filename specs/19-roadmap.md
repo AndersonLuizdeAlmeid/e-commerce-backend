@@ -28,7 +28,7 @@ Entregas incrementais em **fatias verticais**: cada fase vai do banco à tela e 
 
 ## Fase 2 — Identidade, e-mails e admin de catálogo (dividida em 2A e 2B em 22/10/2026)
 > **2A — Contas e e-mails** 🔎 implementada em 26/10/2026, em validação: [entregas/fase-2a-contas-e-emails.md](entregas/fase-2a-contas-e-emails.md). Antecipa o **Outbox** (era da Fase 4) para os e-mails de conta.
-> **2B — Painel de catálogo**: próxima.
+> **2B — Painel de catálogo e nova identidade**: implementada em 31/10/2026 e validada contra banco, API, bucket e container reais em 02/11/2026; faltam só as verificações com celular de verdade: [entregas/fase-2b-painel-de-catalogo.md](entregas/fase-2b-painel-de-catalogo.md).
 
 - RF-001..009, RF-060: cadastro, login, refresh, logout, senha, **recuperação de senha e confirmação de e-mail**.
 - `IEmailSender` + templates base + provedor escolhido (Mailpit em dev). Rate limiter (arquivo 11).

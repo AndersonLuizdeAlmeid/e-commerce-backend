@@ -10,6 +10,10 @@ Os arquivos desta pasta são **cópias consolidadas** delas, geradas por `gerar-
 | 3 | `fase-1-schema.sql` | Todos os ambientes |
 | 4 | `fase-1-dados-exemplo.sql` | **Só Development** (depende do 2) |
 | 5 | `fase-2a-schema.sql` | Todos os ambientes (contas, sessões, Outbox, log de e-mails) |
+| 6 | `fase-2b-schema.sql` | Todos os ambientes (subcategoria, rótulos da grade, dados das fotos) |
+| 7 | `fase-2b-dados-exemplo.sql` | **Só Development** (catálogo da MO; inativa os exemplos de roupa) |
+| 8 | `fase-2b4-schema.sql` | Todos os ambientes (coleções, peça em destaque, ocasiões) |
+| 9 | `fase-2b4-dados-exemplo.sql` | **Só Development** (depende do 7) |
 
 ## Como executar no DBeaver
 

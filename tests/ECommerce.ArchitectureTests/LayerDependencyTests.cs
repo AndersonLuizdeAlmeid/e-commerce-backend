@@ -87,6 +87,8 @@ public sealed class LayerDependencyTests
         var named = Types.InAssembly(ApplicationAssembly)
             .That()
             .ImplementInterface(typeof(ICommandHandler<>))
+            .And()
+            .DoNotResideInNamespace(BehaviorsNamespace)
             .Or()
             .ImplementInterface(typeof(ICommandHandler<,>))
             .And()

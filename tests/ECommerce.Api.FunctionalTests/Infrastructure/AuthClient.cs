@@ -40,6 +40,14 @@ public sealed class AuthClient(ApiFactory factory) : IDisposable
 
     public Task<HttpResponseMessage> GetAsync(string path) => SendAndCaptureAsync(HttpMethod.Get, path, null);
 
+    /// <summary>Envia um corpo já montado (multipart), com o token da sessão.</summary>
+    public Task<HttpResponseMessage> PostContentAsync(string path, HttpContent content) =>
+        SendAndCaptureAsync(HttpMethod.Post, path, content);
+
+    public Task<HttpResponseMessage> PatchAsync(string path, object? body) => SendAndCaptureAsync(HttpMethod.Patch, path, body);
+
+    public Task<HttpResponseMessage> DeleteAsync(string path, object? body = null) => SendAndCaptureAsync(HttpMethod.Delete, path, body);
+
     /// <summary>Cadastra e devolve o cliente já logado.</summary>
     public static async Task<AuthClient> RegisteredAsync(ApiFactory factory, string email, string? cpf = null)
     {
@@ -54,7 +62,7 @@ public sealed class AuthClient(ApiFactory factory) : IDisposable
         using var request = new HttpRequestMessage(method, path);
         if (body is not null)
         {
-            request.Content = JsonContent.Create(body);
+            request.Content = body as HttpContent ?? JsonContent.Create(body);
         }
 
         if (AccessToken is not null)
@@ -90,7 +98,9 @@ public sealed class AuthClient(ApiFactory factory) : IDisposable
 
         if (response.IsSuccessStatusCode && response.Content.Headers.ContentType?.MediaType == "application/json")
         {
-            var json = await response.Content.ReadFromJsonAsync<JsonElement>(Ct);
+            // Lê como texto: ReadFromJsonAsync fecharia o stream que o teste ainda vai ler na resposta devolvida.
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(Ct));
+            var json = document.RootElement;
             if (json.ValueKind == JsonValueKind.Object && json.TryGetProperty("accessToken", out var token))
             {
                 AccessToken = token.GetString();

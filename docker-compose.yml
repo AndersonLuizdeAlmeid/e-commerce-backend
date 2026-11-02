@@ -17,6 +17,32 @@ services:
     image: axllent/mailpit:v1.27
     ports: ["8025:8025", "1025:1025"]
 
+  # Bucket S3 de desenvolvimento (RF-061), no lugar do Cloudflare R2. Console em http://localhost:9001.
+  # RustFS porque as imagens do MinIO deixaram de ser públicas nos registros.
+  rustfs:
+    image: rustfs/rustfs:1.0.4
+    environment:
+      RUSTFS_ACCESS_KEY: mo-dev
+      RUSTFS_SECRET_KEY: mo-dev-secret
+      RUSTFS_CONSOLE_ENABLE: "true"
+    ports: ["9000:9000", "9001:9001"]
+    volumes: [rustfsdata:/data]
+
+  # Cria o bucket com leitura pública, como o domínio público do R2.
+  rustfs-init:
+    image: amazon/aws-cli:latest
+    environment:
+      AWS_ACCESS_KEY_ID: mo-dev
+      AWS_SECRET_ACCESS_KEY: mo-dev-secret
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://rustfs:9000
+    entrypoint: >
+      /bin/sh -c "until aws s3api list-buckets > /dev/null 2>&1; do sleep 1; done;
+      aws s3api head-bucket --bucket mo-images 2> /dev/null || aws s3api create-bucket --bucket mo-images;
+      aws s3api put-bucket-policy --bucket mo-images --policy
+      '{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":\"*\",\"Action\":[\"s3:GetObject\"],\"Resource\":[\"arn:aws:s3:::mo-images/*\"]}]}'"
+    depends_on: [rustfs]
+
   migrator:
     build: { context: ., target: migrator }
     environment:
@@ -32,10 +58,16 @@ services:
       ConnectionStrings__Database: Host=postgres;Port=5432;Database=ecommerce;Username=ecommerce;Password=ecommerce
       Email__Smtp__Host: mailpit
       Email__Smtp__Port: "1025"
+      ImageStorage__ServiceUrl: http://rustfs:9000
+      # A loja roda fora do Compose; localhost aqui dentro seria o próprio container.
+      Storefront__RevalidateUrl: http://host.docker.internal:3000/api/revalidate
+    extra_hosts: ["host.docker.internal:host-gateway"]
     ports: ["5001:8080"]
     depends_on:
       migrator: { condition: service_completed_successfully }
       mailpit: { condition: service_started }
+      rustfs-init: { condition: service_completed_successfully }
 
 volumes:
   pgdata: {}
+  rustfsdata: {}
