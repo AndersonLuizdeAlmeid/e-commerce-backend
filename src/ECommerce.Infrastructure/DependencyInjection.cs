@@ -6,9 +6,12 @@ using ECommerce.Application.Abstractions.Caching;
 using ECommerce.Application.Abstractions.Data;
 using ECommerce.Application.Abstractions.Images;
 using ECommerce.Application.Abstractions.Outbox;
+using ECommerce.Domain.Carts;
 using ECommerce.Domain.Catalog;
 using ECommerce.Domain.Customers;
 using ECommerce.Domain.Identity;
+using ECommerce.Domain.Inventory;
+using ECommerce.Domain.Shipping;
 using ECommerce.Infrastructure.Authentication;
 using ECommerce.Infrastructure.Caching;
 using ECommerce.Infrastructure.Images;
@@ -17,6 +20,7 @@ using ECommerce.Infrastructure.Messaging;
 using ECommerce.Infrastructure.Notifications;
 using ECommerce.Infrastructure.Persistence;
 using ECommerce.Infrastructure.Persistence.Repositories;
+using ECommerce.Infrastructure.Shipping;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -44,6 +48,7 @@ public static class DependencyInjection
         AddCaching(services, configuration);
         AddAuthentication(services, configuration, environment);
         AddMessaging(services, configuration);
+        services.AddShipping(configuration, environment);
 
         services.AddHealthChecks()
             .AddCheck<DatabaseHealthCheck>("postgres", tags: ["ready"]);
@@ -68,6 +73,10 @@ public static class DependencyInjection
         services.AddScoped<ICollectionRepository, CollectionRepository>();
         services.AddScoped<IOccasionRepository, OccasionRepository>();
         services.AddScoped<IShowcaseFeaturedRepository, ShowcaseFeaturedRepository>();
+        services.AddScoped<IStockItemRepository, StockItemRepository>();
+        services.AddScoped<ICartRepository, CartRepository>();
+        services.AddScoped<IShippingSettingsRepository, ShippingSettingsRepository>();
+        services.AddScoped<IShippingRuleRepository, ShippingRuleRepository>();
     }
 
     private static void AddCaching(IServiceCollection services, IConfiguration configuration)

@@ -8,6 +8,7 @@ public enum ErrorType
     BusinessRule,
     Unauthorized,
     Forbidden,
+    Unavailable,
 }
 
 public record Error(string Code, string Message, ErrorType Type)
@@ -20,6 +21,7 @@ public record Error(string Code, string Message, ErrorType Type)
     public static Error BusinessRule(string code, string message) => new(code, message, ErrorType.BusinessRule);
     public static Error Unauthorized(string code, string message) => new(code, message, ErrorType.Unauthorized);
     public static Error Forbidden(string code, string message) => new(code, message, ErrorType.Forbidden);
+    public static Error Unavailable(string code, string message) => new(code, message, ErrorType.Unavailable);
 }
 
 /// <summary>Falha de validação de entrada com os erros por campo (arquivo 13 §4, propriedade "errors").</summary>

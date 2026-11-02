@@ -24,6 +24,10 @@ public sealed record CatalogChanged(IReadOnlyList<string> Tags)
     /// <summary>RF-025 CA5: destaque ou ocasião mudou; a home é revalidada.</summary>
     internal static Task ShowcaseAsync(IOutbox outbox, CancellationToken cancellationToken) =>
         outbox.EnqueueAsync(Type, new CatalogChanged([CatalogCache.ShowcaseTag]), cancellationToken);
+
+    /// <summary>Uma variação esgotou ou voltou: mudam as listagens, o produto e, se for a peça em destaque, a home.</summary>
+    internal static Task AvailabilityAsync(IOutbox outbox, CancellationToken cancellationToken) =>
+        outbox.EnqueueAsync(Type, new CatalogChanged([CatalogCache.ProductsTag, CatalogCache.ShowcaseTag]), cancellationToken);
 }
 
 /// <summary>Valores de <c>catalog.slug_history.entity_type</c>.</summary>

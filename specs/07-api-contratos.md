@@ -83,27 +83,32 @@ Exemplo `GET /products/camiseta-basica`:
 
 | Método | Rota | Acesso | Descrição |
 |--------|------|--------|-----------|
-| POST | `/quotes` | 🌐 | `{ postalCode, items: [{ variantId, quantity }] }` → opções (RF-032) |
-| GET | `/postal-codes/{cep}` | 🌐 | Endereço pelo CEP (proxy ViaCEP com cache) |
+| POST | `/quotes` | 🌐 | `{ postalCode, items: [{ variantId, quantity }] }` → opções (RF-032). CEP inválido → `400`; peça fora da loja → `422`; loja sem configuração → `503` `Shipping.NotConfigured` |
+| GET | `/postal-codes/{cep}` | 🌐 | Endereço pelo CEP (proxy ViaCEP com cache). CEP inexistente → `404`; serviço fora do ar → `503` |
 
 Resposta:
 ```json
 { "options": [
-  { "serviceCode": "PAC",   "name": "PAC",   "price": 0.00,  "originalPrice": 21.40, "deliveryDays": 7, "appliedRule": "Frete grátis acima de R$ 299" },
-  { "serviceCode": "SEDEX", "name": "SEDEX", "price": 38.90, "originalPrice": 38.90, "deliveryDays": 3 }
-] }
+  { "serviceCode": "PAC",   "name": "PAC",   "price": 0.00,  "originalPrice": 21.40, "deliveryDays": 7, "appliedRules": ["Frete grátis acima de R$ 299"] },
+  { "serviceCode": "SEDEX", "name": "SEDEX", "price": 38.90, "originalPrice": 38.90, "deliveryDays": 3, "appliedRules": [] }
+], "isFallback": false, "freeShippingRemaining": null }
 ```
+
+`deliveryDays` já soma os dias de manuseio. Com o provedor fora do ar, `isFallback` é verdadeiro, os preços partem da contingência e `deliveryDays` é nulo. `freeShippingRemaining` é quanto falta para o frete grátis, quando há regra para esse cliente e nenhum serviço já está grátis.
 
 ## 6. Carrinho — `/api/v1/cart`
 
 | Método | Rota | Acesso | Descrição |
 |--------|------|--------|-----------|
 | GET | `/` | 👤 | Carrinho com preços atuais e alertas de estoque |
-| POST | `/items` | 👤 | `{ variantId, quantity }` |
-| PUT | `/items/{variantId}` | 👤 | `{ quantity }` |
-| DELETE | `/items/{variantId}` | 👤 | Remove item |
+| POST | `/items` | 👤 | `{ variantId, quantity }`; se a peça já está na sacola, soma. Devolve a sacola |
+| PUT | `/items/{variantId}` | 👤 | `{ quantity }`. Devolve a sacola |
+| DELETE | `/items/{variantId}` | 👤 | Remove item. Devolve a sacola |
 | DELETE | `/` | 👤 | Limpa |
-| POST | `/merge` | 👤 | `{ items: [{ variantId, quantity }] }` (RF-031) |
+| POST | `/merge` | 👤 | `{ items: [{ variantId, quantity }] }` (RF-031) → `{ cart, skippedVariantIds }` |
+| POST | `/api/v1/catalog/variants/lookup` | 🌐 | `{ items: [{ variantId, quantity }] }`, até 50: a sacola do visitante, que só guarda variação e quantidade. Mesma resposta de `GET /`, sem cache; variação inexistente fica de fora |
+
+Resposta: `{ items: [{ variantId, productName, productSlug, colorName, sizeName, variantLabels, imageUrl, imageAlt, unitPrice, quantity, lineTotal, status, availableQuantity }], subtotal }`. `status`: `Available`, `InsufficientStock` (com `availableQuantity`), `OutOfStock` ou `Unavailable`. `subtotal` conta só o que pode ser comprado. Variação inativa ou inexistente em `POST /items` → `422` `Carts.VariantUnavailable`; passar de 99 por peça ou 50 peças diferentes → `422`.
 
 ## 7. Pedidos e pagamentos (cliente) — `/api/v1/orders`
 
@@ -158,11 +163,12 @@ Exemplo `POST /orders/{id}/payments` (PIX) → `201`:
 | PUT/DELETE | `/occasions/{id}/image` | Imagem da ocasião (multipart, RF-061) / remover |
 | PUT | `/orders/{id}/gift-message` | Corrigir dedicatória até `Enviado` (RF-047 CA3) |
 | GET | `/variants/by-barcode/{code}` | Localiza a variação (RF-059); dígito errado → `400`; sem dono → `404` `Catalog.BarcodeNotFound` |
-| POST | `/stock/scan` | `{ barcode, quantity = 1, reason }` entrada de estoque por leitura |
-| GET | `/stock?lowStock=true&search=` | Estoque por variação (busca também por código de barras) |
-| POST | `/stock/{variantId}/movements` | `{ type, quantity, reason }` (RF-052) |
-| GET/PUT | `/shipping/settings` | CEP de origem, manuseio, contingência (RF-058) |
-| GET/POST | `/shipping/rules` | Regras de frete |
+| POST | `/stock/scan` | `{ barcode, quantity = 1, reason? }` entrada de estoque por leitura; cada chamada soma de novo. Devolve a peça e o saldo. Dígito errado → `400`; sem dono → `404` `Catalog.BarcodeNotFound` (RF-059) |
+| GET | `/stock?lowStock=true&search=&page=` | Estoque por variação (busca também por código de barras). `lowStock` traz só o que está à venda |
+| POST | `/stock/{variantId}/movements` | `{ type: In\|Out\|Adjustment, quantity, reason }`: em `In` e `Out`, o que entra ou sai; em `Adjustment`, o novo saldo. Saldo negativo → `422` `Inventory.InsufficientStock` (RF-052) |
+| GET | `/stock/{variantId}/movements?page=` | Histórico: tipo, delta com sinal, motivo, autor e data |
+| GET/PUT | `/shipping/settings` | CEP de origem, manuseio, contingência e caixa padrão (RF-058). GET responde `204` enquanto não configurado |
+| GET/POST | `/shipping/rules` | Regras de frete: `{ name, priority, isActive, validFrom?, validTo?, minSubtotal?, states[], postalCodeRanges: [{ from, to }], serviceCodes[], effect, effectValue? }`. Condição vazia vale para todos |
 | PUT/DELETE | `/shipping/rules/{id}` | Editar/remover |
 | GET | `/orders?status&from&to&customerId&paymentMethod&page` | Pedidos (RF-053) |
 | GET | `/orders/{id}` | Detalhe com histórico e pagamentos |

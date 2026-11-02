@@ -92,3 +92,23 @@ gen database/fase-2b4-schema.sql schemaversions "$P.Migrations" \
 gen database/fase-2b4-dados-exemplo.sql seedversions "$P.Seeds.Development" \
   "Fase 2B.4 — coleções, destaque e ocasião de exemplo da MO (SOMENTE Development; requer fase-2b-dados-exemplo)" "$P.Migrations.V0012__catalog_showcase.sql" \
   $S/S0004__example_collections.sql
+
+gen database/fase-3-1-schema.sql schemaversions "$P.Migrations" \
+  "Fase 3.1 — movimentações de estoque" "$P.Migrations.V0012__catalog_showcase.sql" \
+  $M/V0013__inventory_stock_movements.sql
+
+gen database/fase-3-2-schema.sql schemaversions "$P.Migrations" \
+  "Fase 3.2 — sacola do cliente" "$P.Migrations.V0013__inventory_stock_movements.sql" \
+  $M/V0014__carts.sql
+
+gen database/fase-3-3-schema.sql schemaversions "$P.Migrations" \
+  "Fase 3.3 — configuração de frete" "$P.Migrations.V0014__carts.sql" \
+  $M/V0015__shipping_settings.sql
+
+gen database/fase-3-3-dados-exemplo.sql seedversions "$P.Seeds.Development" \
+  "Fase 3.3 — configuração de frete de exemplo, sem regras (SOMENTE Development)" "$P.Migrations.V0015__shipping_settings.sql" \
+  $S/S0005__example_shipping.sql
+
+gen database/fase-3-4-schema.sql schemaversions "$P.Migrations" \
+  "Fase 3.4 — regras de frete" "$P.Migrations.V0015__shipping_settings.sql" \
+  $M/V0016__shipping_rules.sql

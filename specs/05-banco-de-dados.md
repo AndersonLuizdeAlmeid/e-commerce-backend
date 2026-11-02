@@ -230,6 +230,10 @@ CREATE TABLE shipping.settings (                      -- linha única
     handling_days          smallint NOT NULL DEFAULT 1,
     fallback_pac_price     numeric(12,2) NOT NULL,
     fallback_sedex_price   numeric(12,2) NOT NULL,
+    box_weight_grams       int NOT NULL,
+    box_height_cm          numeric(6,1) NOT NULL,
+    box_width_cm           numeric(6,1) NOT NULL,
+    box_length_cm          numeric(6,1) NOT NULL,
     updated_at             timestamptz NOT NULL
 );
 
@@ -238,12 +242,12 @@ CREATE TABLE shipping.rules (
     name             text NOT NULL,
     priority         int  NOT NULL,
     is_active        boolean NOT NULL DEFAULT true,
-    valid_from       timestamptz NULL,
-    valid_to         timestamptz NULL,
+    valid_from       date NULL,                       -- inclusivas, no horário de Brasília
+    valid_to         date NULL,
     min_subtotal     numeric(12,2) NULL,
-    states           char(2)[] NULL,
-    postal_code_ranges int4range[] NULL,
-    service_codes    text[] NULL,
+    states           text[] NOT NULL DEFAULT '{}',
+    postal_code_ranges text[] NOT NULL DEFAULT '{}',  -- '01000000-19999999'
+    service_codes    text[] NOT NULL DEFAULT '{}',
     effect           text NOT NULL CHECK (effect IN ('FreeShipping','PercentDiscount','FixedDiscount','Surcharge','HideService')),
     effect_value     numeric(12,2) NULL,
     created_at       timestamptz NOT NULL,

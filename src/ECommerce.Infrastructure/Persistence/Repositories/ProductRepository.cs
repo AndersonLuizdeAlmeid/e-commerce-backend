@@ -108,7 +108,7 @@ internal sealed class ProductRepository(IUnitOfWork unitOfWork) : IProductReposi
 
     /// <summary>
     /// Insere as novas e atualiza as existentes; variação nunca é apagada. Toda variação nasce com saldo zero em
-    /// <c>inventory.stock_items</c>: a vitrine lê o saldo dali e a entrada de estoque chega na Fase 3 (RF-052).
+    /// <c>inventory.stock_items</c>: a vitrine lê o saldo dali, e o admin de estoque o movimenta (RF-052).
     /// </summary>
     private async Task SaveVariantsAsync(Product product, CancellationToken cancellationToken)
     {
