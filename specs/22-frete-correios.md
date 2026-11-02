@@ -49,14 +49,16 @@ Aplicadas **sobre** a cotação, em ordem de prioridade:
 | Valor fixo de contingência | Se a API dos Correios estiver fora: PAC R$ 25, SEDEX R$ 45 |
 | Ativar/desativar serviço | Ocultar SEDEX para determinada região |
 
-Campos: `Name`, `Priority`, `IsActive`, `ValidFrom/ValidTo` (promoções com data), condições (`MinSubtotal`, `States[]`, `PostalCodeRanges[]`, `ServiceCodes[]`) e efeito (`FreeShipping` \| `PercentDiscount` \| `FixedDiscount` \| `Surcharge`).
+Campos: `Name`, `Priority`, `IsActive`, `ValidFrom/ValidTo` (datas inclusivas, no horário de Brasília), condições (`MinSubtotal`, `States[]`, `PostalCodeRanges[]`, `ServiceCodes[]`) e efeito (`FreeShipping` \| `PercentDiscount` \| `FixedDiscount` \| `Surcharge` \| `HideService`).
+
+Aplicação: por `Priority` crescente, acumulando, com piso em R$ 0; `FreeShipping` e `HideService` encerram a conta daquele serviço. A UF sai de uma tabela fixa de faixas de CEP, sem chamada externa. O valor de contingência fica em `shipping.settings`, não é regra, e as regras também valem sobre ele.
 
 ## 4. Fluxos
 
 ### 4.1 Cotação (RF-032)
 `POST /api/v1/shipping/quotes` `{ postalCode, items: [{ variantId, quantity }] }` → lista de opções (`PAC — R$ 18,90 — 6 dias úteis`, `SEDEX — ...`).
 - Público (o visitante pode simular no produto/carrinho), com **rate limit** próprio (arquivo 11).
-- **Cache** de 30 min por (CEP destino + pacote) — arquivo 12.
+- **Cache** de 30 min por (CEP destino + origem + pacote + valor declarado), só da resposta do provedor; as regras dependem do subtotal e são aplicadas depois do cache — arquivo 12.
 - Prazo exibido = prazo dos Correios + **dias de manuseio** configuráveis.
 
 ### 4.2 Checkout

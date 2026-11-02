@@ -76,6 +76,7 @@ public static class DependencyInjection
         services.AddScoped<IStockItemRepository, StockItemRepository>();
         services.AddScoped<ICartRepository, CartRepository>();
         services.AddScoped<IShippingSettingsRepository, ShippingSettingsRepository>();
+        services.AddScoped<IShippingRuleRepository, ShippingRuleRepository>();
     }
 
     private static void AddCaching(IServiceCollection services, IConfiguration configuration)

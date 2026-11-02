@@ -37,7 +37,7 @@ Entregas incrementais em **fatias verticais**: cada fase vai do banco à tela e 
 - Frontend: login, cadastro, recuperar senha, confirmar e-mail; admin de catálogo.
 
 ## Fase 3 — Estoque, carrinho e frete
-> Planejada em 02/11/2026, em quatro fatias; **3.1 (estoque) e 3.2 (sacola) implementadas e validadas**, faltando testes com aparelho real; **3.3 (cotação) implementada, faltando validar com o token do Melhor Envio**: [entregas/fase-3-estoque-sacola-e-frete.md](entregas/fase-3-estoque-sacola-e-frete.md).
+> Planejada em 02/11/2026, em quatro fatias; **3.1 (estoque), 3.2 (sacola) e 3.4 (regras) implementadas e validadas**, faltando testes com aparelho real; **3.3 (cotação) implementada, faltando validar com o token do Melhor Envio**: [entregas/fase-3-estoque-sacola-e-frete.md](entregas/fase-3-estoque-sacola-e-frete.md).
 - Estoque por variação (RF-052), carrinho + merge (RF-030/031).
 - **Integração Correios** (ou agregador), regras de frete, simulador por CEP (RF-032, RF-058).
 - Frontend: carrinho com frete; admin de estoque e regras de frete.

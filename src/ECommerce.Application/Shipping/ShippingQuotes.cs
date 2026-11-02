@@ -15,10 +15,10 @@ namespace ECommerce.Application.Shipping;
 
 // RF-032: cotação pública por CEP. Preço e peso vêm sempre do banco, nunca do navegador.
 
-public sealed record ShippingOptionResponse(string ServiceCode, string Name, decimal Price, decimal OriginalPrice, int? DeliveryDays);
+public sealed record ShippingOptionResponse(string ServiceCode, string Name, decimal Price, decimal OriginalPrice, int? DeliveryDays, IReadOnlyList<string> AppliedRules);
 
 /// <summary><see cref="IsFallback"/>: o provedor está fora, e os valores são os de contingência da loja, sem prazo (RF-032 CA2).</summary>
-public sealed record ShippingQuotesResponse(IReadOnlyList<ShippingOptionResponse> Options, bool IsFallback);
+public sealed record ShippingQuotesResponse(IReadOnlyList<ShippingOptionResponse> Options, bool IsFallback, decimal? FreeShippingRemaining);
 
 public sealed record ShippingQuoteItem(Guid VariantId, int Quantity);
 
@@ -66,10 +66,10 @@ internal sealed class ShippingLookupFailedException(Error error) : Exception(err
     public Error Error { get; } = error;
 }
 
-internal sealed class GetShippingQuotesHandler(IDbConnectionFactory connectionFactory, IShippingQuoteProvider provider, ICacheService cache)
+internal sealed class GetShippingQuotesHandler(IDbConnectionFactory connectionFactory, IShippingQuoteProvider provider, ICacheService cache, TimeProvider time)
     : IQueryHandler<GetShippingQuotesQuery, ShippingQuotesResponse>
 {
-    private const string Sql = """
+    private const string Sql = $"""
         SELECT origin_postal_code, handling_days, fallback_pac_price, fallback_sedex_price,
                box_weight_grams, box_height_cm, box_width_cm, box_length_cm
           FROM shipping.settings;
@@ -84,6 +84,10 @@ internal sealed class GetShippingQuotesHandler(IDbConnectionFactory connectionFa
           JOIN catalog.products p ON p.id = v.product_id
           JOIN catalog.categories c ON c.id = p.category_id
          WHERE v.id = ANY(@Ids) AND v.is_active AND p.is_active AND c.is_active;
+
+        SELECT {ShippingRuleRow.Columns} FROM shipping.rules WHERE is_active;
+
+        SELECT date_trunc('day', @Now::timestamptz AT TIME ZONE 'America/Sao_Paulo');
         """;
 
     public async Task<Result<ShippingQuotesResponse>> Handle(GetShippingQuotesQuery query, CancellationToken cancellationToken)
@@ -100,11 +104,16 @@ internal sealed class GetShippingQuotesHandler(IDbConnectionFactory connectionFa
 
         SettingsRow? settings;
         List<VariantRow> variants;
+        List<ShippingRule> rules;
+        DateOnly today;
         await using (var connection = await connectionFactory.OpenConnectionAsync(cancellationToken))
         {
-            using var grid = await connection.QueryMultipleAsync(new CommandDefinition(Sql, new { Ids = lines.Keys.ToArray() }, cancellationToken: cancellationToken));
+            using var grid = await connection.QueryMultipleAsync(new CommandDefinition(
+                Sql, new { Ids = lines.Keys.ToArray(), Now = time.GetUtcNow().UtcDateTime }, cancellationToken: cancellationToken));
             settings = await grid.ReadSingleOrDefaultAsync<SettingsRow>();
             variants = (await grid.ReadAsync<VariantRow>()).AsList();
+            rules = (await grid.ReadAsync<ShippingRuleRow>()).Select(row => row.ToRule()).ToList();
+            today = DateOnly.FromDateTime(await grid.ReadSingleAsync<DateTime>());
         }
 
         if (settings is null)
@@ -122,32 +131,39 @@ internal sealed class GetShippingQuotesHandler(IDbConnectionFactory connectionFa
             new PackageDimensions(settings.BoxHeightCm, settings.BoxWidthCm, settings.BoxLengthCm),
             variants.Select(v => new PackageItem(v.WeightGrams, new PackageDimensions(v.HeightCm, v.WidthCm, v.LengthCm), lines[v.VariantId])).ToList());
 
-        var request = new ShippingQuoteRequest(
-            PostalCode.Rehydrate(settings.OriginPostalCode.Trim()),
-            destination.Value,
-            package,
-            variants.Sum(v => v.Price * lines[v.VariantId]));
+        var subtotal = variants.Sum(v => v.Price * lines[v.VariantId]);
+        var request = new ShippingQuoteRequest(PostalCode.Rehydrate(settings.OriginPostalCode.Trim()), destination.Value, package, subtotal);
+        var context = new ShippingPricingContext(subtotal, destination.Value, today);
 
         try
         {
             var quotes = await cache.GetOrCreateAsync(ShippingCache.QuoteKey(request), ct => QuoteAsync(request, ct), ShippingCache.Quote, cancellationToken);
-            return new ShippingQuotesResponse(
-                quotes.Select(q => new ShippingOptionResponse(q.ServiceCode, q.ServiceName, q.Price, q.Price, q.DeliveryDays + settings.HandlingDays)).ToList(),
-                IsFallback: false);
+            return Priced(quotes.Select(q => q with { DeliveryDays = q.DeliveryDays + settings.HandlingDays }).ToList(), rules, context, isFallback: false);
         }
         catch (ShippingLookupFailedException failure) when (failure.Error == ShippingErrors.QuoteUnavailable)
         {
-            return new ShippingQuotesResponse(
-                [
-                    new ShippingOptionResponse(ShippingServices.Pac, ShippingServices.Pac, settings.FallbackPacPrice, settings.FallbackPacPrice, null),
-                    new ShippingOptionResponse(ShippingServices.Sedex, ShippingServices.Sedex, settings.FallbackSedexPrice, settings.FallbackSedexPrice, null),
-                ],
-                IsFallback: true);
+            // As regras valem também aqui: a promessa de frete grátis não some porque os Correios caíram (entrega 3 §3, P4).
+            ShippingQuote[] fallback =
+            [
+                new(ShippingServices.Pac, ShippingServices.Pac, settings.FallbackPacPrice, null),
+                new(ShippingServices.Sedex, ShippingServices.Sedex, settings.FallbackSedexPrice, null),
+            ];
+            return Priced(fallback, rules, context, isFallback: true);
         }
         catch (ShippingLookupFailedException failure)
         {
             return failure.Error;
         }
+    }
+
+    private static ShippingQuotesResponse Priced(
+        IReadOnlyList<ShippingQuote> quotes, IReadOnlyList<ShippingRule> rules, ShippingPricingContext context, bool isFallback)
+    {
+        var priced = ShippingPricingService.Apply(quotes, rules, context);
+        return new ShippingQuotesResponse(
+            priced.Options.Select(o => new ShippingOptionResponse(o.Quote.ServiceCode, o.Quote.ServiceName, o.Price, o.Quote.Price, o.Quote.DeliveryDays, o.AppliedRules)).ToList(),
+            isFallback,
+            priced.FreeShippingRemaining);
     }
 
     /// <summary>Lança em vez de devolver a falha: contingência em cache fixaria o preço dela por 30 minutos (entrega 3 §3, P4).</summary>

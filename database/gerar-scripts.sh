@@ -108,3 +108,7 @@ gen database/fase-3-3-schema.sql schemaversions "$P.Migrations" \
 gen database/fase-3-3-dados-exemplo.sql seedversions "$P.Seeds.Development" \
   "Fase 3.3 — configuração de frete de exemplo, sem regras (SOMENTE Development)" "$P.Migrations.V0015__shipping_settings.sql" \
   $S/S0005__example_shipping.sql
+
+gen database/fase-3-4-schema.sql schemaversions "$P.Migrations" \
+  "Fase 3.4 — regras de frete" "$P.Migrations.V0015__shipping_settings.sql" \
+  $M/V0016__shipping_rules.sql

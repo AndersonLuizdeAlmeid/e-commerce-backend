@@ -1,3 +1,4 @@
+using ECommerce.Api.Endpoints.Admin;
 using ECommerce.Api.Extensions;
 using ECommerce.Application.Abstractions.Messaging;
 using ECommerce.Application.Abstractions.Shipping;
@@ -19,6 +20,23 @@ internal sealed record ShippingSettingsRequest(
     decimal BoxHeightCm,
     decimal BoxWidthCm,
     decimal BoxLengthCm);
+
+internal sealed record ShippingRuleRequest(
+    string Name,
+    int Priority,
+    bool IsActive,
+    DateOnly? ValidFrom,
+    DateOnly? ValidTo,
+    decimal? MinSubtotal,
+    IReadOnlyList<string>? States,
+    IReadOnlyList<PostalCodeRangeDto>? PostalCodeRanges,
+    IReadOnlyList<string>? ServiceCodes,
+    string Effect,
+    decimal? EffectValue)
+{
+    public ShippingRuleInput ToInput() => new(
+        Name, Priority, IsActive, ValidFrom, ValidTo, MinSubtotal, States ?? [], PostalCodeRanges ?? [], ServiceCodes ?? [], Effect, EffectValue);
+}
 
 /// <summary><c>/api/v1/shipping</c> e <c>/admin/shipping</c> — RF-032 e RF-058 (arquivo 07 §5 e §9).</summary>
 internal sealed class ShippingEndpoints : IEndpointGroup
@@ -42,6 +60,48 @@ internal sealed class ShippingEndpoints : IEndpointGroup
         settings.MapPut("/", SaveSettings).WithName("AdminSaveShippingSettings")
             .WithSummary("Salva a configuração de frete (RF-058)")
             .RequireRateLimiting(RateLimitPolicies.AdminWrite);
+
+        var rules = app.MapGroup("/admin/shipping/rules").WithTags("Admin · Frete").RequireAuthorization(Policies.Admin);
+
+        rules.MapGet("/", ListRules).WithName("AdminListShippingRules").WithSummary("Regras de frete, na ordem em que são aplicadas (RF-058)");
+        rules.MapPost("/", CreateRule).WithName("AdminCreateShippingRule")
+            .WithSummary("Cria regra de frete (RF-058)")
+            .WithDescription("`effect`: `FreeShipping`, `PercentDiscount`, `FixedDiscount`, `Surcharge` ou `HideService`. Condição vazia vale para todos. Vigência em datas inclusivas, no horário de Brasília.")
+            .RequireRateLimiting(RateLimitPolicies.AdminWrite);
+        rules.MapPut("/{id:guid}", UpdateRule).WithName("AdminUpdateShippingRule").WithSummary("Edita regra de frete (RF-058)")
+            .RequireRateLimiting(RateLimitPolicies.AdminWrite);
+        rules.MapDelete("/{id:guid}", DeleteRule).WithName("AdminDeleteShippingRule").WithSummary("Exclui regra de frete (RF-058)")
+            .RequireRateLimiting(RateLimitPolicies.AdminWrite);
+    }
+
+    private static async Task<Results<Ok<IReadOnlyList<ShippingRuleResponse>>, ProblemHttpResult>> ListRules(
+        IQueryHandler<ListShippingRulesQuery, IReadOnlyList<ShippingRuleResponse>> handler, CancellationToken cancellationToken)
+    {
+        var result = await handler.Handle(new ListShippingRulesQuery(), cancellationToken);
+        return result.ToHttpResult();
+    }
+
+    private static async Task<Results<Created<CreatedResponse>, ProblemHttpResult>> CreateRule(
+        ShippingRuleRequest request, ICommandHandler<CreateShippingRuleCommand, Guid> handler, CancellationToken cancellationToken)
+    {
+        var result = await handler.Handle(new CreateShippingRuleCommand(request.ToInput()), cancellationToken);
+        return result.IsSuccess
+            ? TypedResults.Created($"/api/v1/admin/shipping/rules/{result.Value}", new CreatedResponse(result.Value))
+            : result.Error.ToProblem();
+    }
+
+    private static async Task<Results<NoContent, ProblemHttpResult>> UpdateRule(
+        Guid id, ShippingRuleRequest request, ICommandHandler<UpdateShippingRuleCommand> handler, CancellationToken cancellationToken)
+    {
+        var result = await handler.Handle(new UpdateShippingRuleCommand(id, request.ToInput()), cancellationToken);
+        return result.IsSuccess ? TypedResults.NoContent() : result.Error.ToProblem();
+    }
+
+    private static async Task<Results<NoContent, ProblemHttpResult>> DeleteRule(
+        Guid id, ICommandHandler<DeleteShippingRuleCommand> handler, CancellationToken cancellationToken)
+    {
+        var result = await handler.Handle(new DeleteShippingRuleCommand(id), cancellationToken);
+        return result.IsSuccess ? TypedResults.NoContent() : result.Error.ToProblem();
     }
 
     private static async Task<Results<Ok<ShippingQuotesResponse>, ProblemHttpResult>> Quote(

@@ -1,6 +1,6 @@
 # Entrega — Fase 3: Estoque, sacola e frete
 
-**Status:** Planejada em 02/11/2026. **Fatias 3.1 e 3.2 implementadas e validadas com banco, API em container e build de produção em 02/11/2026** (seção 8); na 3.1 faltam a câmera e o leitor USB de verdade. **Fatia 3.3 implementada com provedor falso, sem validação contra o Melhor Envio de verdade**, que depende do token de sandbox. Fatia 3.4 não iniciada.
+**Status:** Planejada em 02/11/2026. **Fatias 3.1 e 3.2 implementadas e validadas com banco, API em container e build de produção em 02/11/2026** (seção 8); na 3.1 faltam a câmera e o leitor USB de verdade. **Fatia 3.3 implementada com provedor falso, sem validação contra o Melhor Envio de verdade**, que depende do token de sandbox. **Fatia 3.4 implementada e validada com banco, API em container e build de produção.**
 **Repositórios:** `e-commerce-backend` e `e-commerce-frontend` (branch `feat/fase-3` nos dois).
 
 ## 1. Contexto
@@ -189,7 +189,7 @@ Primeiro só build (A), depois banco pelo DBeaver (B) e por último execução (
 | 3.1 — Estoque | Implementada e validada em 02/11/2026; falta leitura com aparelho real |
 | 3.2 — Sacola | Implementada e validada em 02/11/2026; falta aprovar o visual |
 | 3.3 — Cotação de frete | Implementada em 02/11/2026 com provedor falso. **Não fecha sem o token do Melhor Envio** |
-| 3.4 — Regras de frete | Não iniciada |
+| 3.4 — Regras de frete | Implementada e validada em 02/11/2026, sobre o provedor falso |
 
 ### 3.1 — Validação (02/11/2026)
 
@@ -269,6 +269,40 @@ Também conferido: "desfazer" ao remover, foco no seletor ao tocar em "Escolha o
 - As medidas vão arredondadas para cima, porque a API do Melhor Envio pede inteiros.
 - Mudar a configuração não precisa limpar cache: origem e pacote estão na chave da cotação, e o manuseio é somado depois dela.
 - O provedor exige `Shipping:MelhorEnvio:Token` e `UserAgent` (nome da aplicação e e-mail de contato) para a API subir fora de Development.
+
+### 3.4 — Validação (02/11/2026)
+
+As regras não dependem do provedor: são aplicadas sobre o preço que ele devolver. Rodaram sobre o provedor falso.
+
+| # | Resultado |
+|---|-----------|
+| A1, A2 | ✅ 0 avisos e 0 erros; formatação sem alterações |
+| A3, A4 | ✅ lint, typecheck e 177 testes do frontend |
+| A5 | ✅ `npm run build` contra o stub e contra a API real |
+| B1, B2 | ✅ `fase-3-4-schema.sql` aplica e, repetido, para com "Script já aplicado" |
+| B4 | ✅ O `ECommerce.Migrator` responde "No new scripts" |
+| C1 | ✅ API em container. .NET: Domain 161, Application 32, Arquitetura 8, Funcionais 237 |
+| C15 | ✅ Regra criada no painel, grátis no PAC a partir de R$ 299. Mesmo CEP: abaixo, "Faltam R$ 9,10"; acima, preço riscado e "Grátis" |
+| C16 | ✅ Na API real: UF e `HideService` escondem o SEDEX só em MG; o desconto vale só na faixa de CEP; regra com data futura não vale |
+| C17 | ✅ Lighthouse com o build de produção e a API real, 1 rodada: 100 nas quatro categorias em home, categoria e produto |
+| RF-032 CA2 | ✅ Regras também valem sobre a contingência (teste funcional) |
+
+**Decisões de implementação:**
+- `shipping.rules` usa `date` para a vigência, como as ocasiões, e `text[]` para UFs e faixas, no lugar de `char(2)[]` e `int4range[]` do DDL de referência. Faixa em texto evita perder o zero à esquerda do CEP e mapear tipo de faixa no Dapper.
+- Regras e configuração não têm cache: são lidas a cada cotação, que já tem limite próprio, e valem na hora. O arquivo 12 foi ajustado.
+- O desconto é calculado sobre o preço já acumulado, e o total é arredondado para centavos só no fim.
+- Sem marcar serviço, ou marcando os dois, a regra vale para ambos.
+- Com algum serviço já grátis, a loja não mostra "faltam R$ X".
+
+**Não verificado:** "Excluir" pela tela (a confirmação do navegador não foi exercitada; a rota tem teste). Desligar e reabrir a regra no formulário foram conferidos na tela.
+
+### Fechamento da fase (02/11/2026)
+
+| Pendência | Situação |
+|-----------|----------|
+| Cotação real (C11, C13, C14) | ⏳ Depende do token do Melhor Envio |
+| Câmera e leitor USB reais (C5), toque em celular | ⏳ Depende de aparelho |
+| Aprovação do visual da sacola | ⏳ Depende da loja |
 
 **Para fechar a 3.3:** configurar o token e o User-Agent, trocar para `MelhorEnvio`, conferir C11, C13 e C14, gravar respostas reais nos testes do adaptador e confirmar como o serviço não atendido vem na resposta, ponto que a documentação não descreve e que hoje é tratado por `error` ou falta de preço.
 

@@ -89,12 +89,12 @@ Exemplo `GET /products/camiseta-basica`:
 Resposta:
 ```json
 { "options": [
-  { "serviceCode": "PAC",   "name": "PAC",   "price": 21.40, "originalPrice": 21.40, "deliveryDays": 7 },
-  { "serviceCode": "SEDEX", "name": "SEDEX", "price": 38.90, "originalPrice": 38.90, "deliveryDays": 3 }
-], "isFallback": false }
+  { "serviceCode": "PAC",   "name": "PAC",   "price": 0.00,  "originalPrice": 21.40, "deliveryDays": 7, "appliedRules": ["Frete grátis acima de R$ 299"] },
+  { "serviceCode": "SEDEX", "name": "SEDEX", "price": 38.90, "originalPrice": 38.90, "deliveryDays": 3, "appliedRules": [] }
+], "isFallback": false, "freeShippingRemaining": null }
 ```
 
-`deliveryDays` já soma os dias de manuseio. Com o provedor fora do ar, `isFallback` é verdadeiro, os preços são os de contingência e `deliveryDays` é nulo. A Fase 3.4 acrescenta as regras: `appliedRules[]` e o aviso de frete grátis.
+`deliveryDays` já soma os dias de manuseio. Com o provedor fora do ar, `isFallback` é verdadeiro, os preços partem da contingência e `deliveryDays` é nulo. `freeShippingRemaining` é quanto falta para o frete grátis, quando há regra para esse cliente e nenhum serviço já está grátis.
 
 ## 6. Carrinho — `/api/v1/cart`
 
@@ -168,7 +168,7 @@ Exemplo `POST /orders/{id}/payments` (PIX) → `201`:
 | POST | `/stock/{variantId}/movements` | `{ type: In\|Out\|Adjustment, quantity, reason }`: em `In` e `Out`, o que entra ou sai; em `Adjustment`, o novo saldo. Saldo negativo → `422` `Inventory.InsufficientStock` (RF-052) |
 | GET | `/stock/{variantId}/movements?page=` | Histórico: tipo, delta com sinal, motivo, autor e data |
 | GET/PUT | `/shipping/settings` | CEP de origem, manuseio, contingência e caixa padrão (RF-058). GET responde `204` enquanto não configurado |
-| GET/POST | `/shipping/rules` | Regras de frete |
+| GET/POST | `/shipping/rules` | Regras de frete: `{ name, priority, isActive, validFrom?, validTo?, minSubtotal?, states[], postalCodeRanges: [{ from, to }], serviceCodes[], effect, effectValue? }`. Condição vazia vale para todos |
 | PUT/DELETE | `/shipping/rules/{id}` | Editar/remover |
 | GET | `/orders?status&from&to&customerId&paymentMethod&page` | Pedidos (RF-053) |
 | GET | `/orders/{id}` | Detalhe com histórico e pagamentos |

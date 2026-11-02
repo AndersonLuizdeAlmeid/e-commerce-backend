@@ -24,8 +24,8 @@
 | Disponibilidade (`inStock`) | — | — | **não cacheado** no detalhe; na listagem tolera até 2 min de atraso | — |
 | Security stamp do usuário | `identity:sstamp:{userId}` | `user:{id}` | 1 min | Troca de senha / role / desativação |
 | Dashboard admin | `admin:dashboard:{from}:{to}` | `dashboard` | 1 min | Expiração |
-| Cotação de frete | `shipping:quote:{cepDestino}:{hash(pacotes)}` | `shipping` | 30 min | Alteração de regras/configuração de frete |
-| Regras de frete ativas | `shipping:rules` | `shipping` | 10 min | CRUD de regras |
+| Cotação de frete (só a resposta do provedor) | `shipping:quote:{cepDestino}:{hash(origem, pacote, valor declarado)}` | `shipping` | 30 min | Expiração. Regras e manuseio entram depois do cache; contingência não é cacheada |
+| Regras e configuração de frete | — | — | **não cacheadas** | Lidas a cada cotação, que já tem limite próprio (arquivo 11), e valem na hora |
 | Endereço por CEP | `shipping:cep:{cep}` | — | 7 dias | Expiração |
 | Cores e tamanhos | `catalog:filters:{category}` | `products` | 10 min | Escrita em produto/variação/cor/tamanho |
 
