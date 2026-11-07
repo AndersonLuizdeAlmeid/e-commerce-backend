@@ -5,14 +5,19 @@
 #
 #   sudo bash bootstrap.sh                   # primeira vez ou para aplicar mudanças deste script
 #   sudo bash bootstrap.sh --new-deploy-key  # troca a chave de deploy (a antiga deixa de valer)
+#   sudo UFW_ALLOW="80/tcp 443/tcp" bash bootstrap.sh  # portas de programas fora do Docker que seguem públicas
 set -Eeuo pipefail
 
 REPO_URL=${REPO_URL:-https://github.com/AndersonLuizdeAlmeid/e-commerce-backend.git}
 BRANCH=${BRANCH:-main}
 IMAGE_PREFIX=${IMAGE_PREFIX:-ghcr.io/andersonluizdealmeid}
 TS_HOSTNAME=${TS_HOSTNAME:-mo-dev}
+# Portas que continuam abertas no firewall além da 22, para programas que rodam fora do Docker (ex.: um nginx).
+UFW_ALLOW=${UFW_ALLOW:-}
 # Só para ensaio fora da VM: não entra no Tailscale e usa um endereço fictício.
 SKIP_TAILSCALE_UP=${SKIP_TAILSCALE_UP:-0}
+# Faixas de endereço da rede privada do Tailscale (IPv4 e IPv6).
+TAILNET_RANGES="100.64.0.0/10,fd7a:115c:a1e0::/48"
 
 MO_HOME=/opt/mo
 NEW_DEPLOY_KEY=0
@@ -26,6 +31,9 @@ die() { printf '\033[31mERRO:\033[0m %s\n' "$*" >&2; exit 1; }
 # shellcheck source=/dev/null
 source /etc/os-release
 [[ $ID == ubuntu ]] || die "feito para Ubuntu; encontrado $PRETTY_NAME"
+for rule in $UFW_ALLOW; do
+  [[ $rule =~ ^[0-9]{1,5}/(tcp|udp)$ ]] || die "UFW_ALLOW aceita só porta/protocolo, como 80/tcp; recebido: $rule"
+done
 
 step "Conferindo o Docker (não é reinstalado nem reiniciado)"
 command -v docker > /dev/null || die "Docker não encontrado"
@@ -186,16 +194,26 @@ systemctl enable --now fail2ban > /dev/null 2>&1
 systemctl restart fail2ban
 
 step "Firewall (ufw)"
-# Programas escutando direto no host ficariam bloqueados; os do Docker não passam pelo ufw.
+# Programas escutando direto no host ficariam bloqueados, a menos que a porta esteja em UFW_ALLOW; os do Docker não
+# passam pelo ufw.
+allowed_ports=" 22 $(for rule in $UFW_ALLOW; do printf '%s ' "${rule%%/*}"; done)"
 exposed=$(ss -H -tlnp | awk '$4 !~ /^(127\.|\[::1\]|\[?::ffff:127\.)/' \
-  | grep -v -E 'users:\(\("(sshd|docker-proxy|tailscaled|systemd-resolve)"' || true)
+  | grep -v -E 'users:\(\("(sshd|docker-proxy|tailscaled|systemd-resolve)"' \
+  | while read -r line; do
+      port=$(awk '{print $4}' <<< "$line" | sed 's/.*://')
+      [[ $allowed_ports == *" $port "* ]] || echo "$line"
+    done || true)
 if [[ -n $exposed && $(ufw status | head -1) != "Status: active" ]]; then
   warn "ufw NÃO foi ligado: há programas fora do Docker escutando na rede e eles seriam bloqueados:"
   echo "$exposed"
+  echo "Se essas portas devem continuar públicas, rode de novo com UFW_ALLOW, por exemplo: UFW_ALLOW=\"80/tcp 443/tcp\""
 else
   ufw default deny incoming > /dev/null
   ufw default allow outgoing > /dev/null
   ufw allow 22/tcp comment 'SSH (deploys de outras aplicações)' > /dev/null
+  for rule in $UFW_ALLOW; do
+    ufw allow "$rule" comment 'liberada por UFW_ALLOW' > /dev/null
+  done
   ufw allow in on tailscale0 comment 'rede privada' > /dev/null
   ufw --force enable > /dev/null
   ufw status verbose | head -12
@@ -207,12 +225,14 @@ private_key=""
 if [[ ! -s $keyfile || $NEW_DEPLOY_KEY == 1 ]]; then
   tmp=$(mktemp -d)
   ssh-keygen -q -t ed25519 -N "" -C "github-actions-mo-dev" -f "$tmp/key"
-  echo "restrict,command=\"/usr/local/bin/mo-deploy\" $(cat "$tmp/key.pub")" > "$keyfile"
+  # Só vale vindo da rede privada: pela porta 22 pública, a chave é recusada mesmo se vazar.
+  echo "restrict,from=\"$TAILNET_RANGES\",command=\"/usr/local/bin/mo-deploy\" $(cat "$tmp/key.pub")" > "$keyfile"
   chmod 644 "$keyfile"
   private_key=$(cat "$tmp/key")
   shred -u "$tmp/key" && rm -rf "$tmp"
 else
   echo "já existe (para trocar: --new-deploy-key)"
+  grep -q 'from="' "$keyfile" || warn "a chave atual aceita conexão de qualquer lugar; troque com --new-deploy-key"
 fi
 
 step "Pronto"
