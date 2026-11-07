@@ -1,6 +1,6 @@
 # Entrega — Infra 1: ambiente de desenvolvimento na VM
 
-**Status:** Planejada em 07/11/2026. **I.1 e I.2 na `main` e a VM preparada em 07/11/2026** (§9). **I.3 implementada e ensaiada**; o primeiro deploy automático acontece no merge, depois da chave nova (§9, I.3).
+**Status:** Planejada em 07/11/2026. **I.1 e I.2 na `main` e a VM preparada em 07/11/2026** (§9). **I.3 implementada e ensaiada**; o primeiro merge falhou por configuração do GitHub (chave e `STORE_URL`), com os workflows corrigidos para apontar isso (§9).
 **Repositórios:** `e-commerce-backend` e `e-commerce-frontend` (branch `feat/ambiente-dev` nos dois).
 
 ## 1. Contexto
@@ -171,3 +171,20 @@ Feito num container Ubuntu 22.04 com systemd e Docker próprios, com duas "aplic
 **Ordem para ligar:** rodar o `bootstrap.sh` desta branch com `UFW_ALLOW="80/tcp 443/tcp"` e `--new-deploy-key`; cadastrar `DEPLOY_SSH_KEY` no ambiente `dev` dos dois repositórios; merge do backend (o primeiro deploy sobe banco e API); merge do frontend (a loja só sobe depois do backend).
 
 **Não validado:** a ação do Tailscale com a credencial real e o deploy de verdade, que acontecem no merge.
+
+### I.3 — Primeiro merge (07/11/2026)
+
+O merge disparou os dois pipelines; build, testes e imagens do backend passaram, e os dois falharam por configuração do GitHub:
+
+- **Deploy do backend:** `Load key ... error in libcrypto` — a `DEPLOY_SSH_KEY` chegou ao runner com o formato estragado pela cópia do terminal. A Tailscale funcionou (o runner alcançou a VM).
+- **Imagem da loja:** `Failed to collect page data for /_not-found` — a variável `STORE_URL` não é um endereço válido, e o `new URL()` do `metadataBase` quebra o build. Reproduzido localmente: com os endereços certos a imagem compila, com `STORE_URL` sem `https://` dá o mesmo erro.
+
+Correção nos workflows: o deploy refaz o arquivo da chave só com o conteúdo entre `BEGIN` e `END`, recusa chave inválida com mensagem clara e mostra a impressão digital (comparável com `ssh-keygen -lf /etc/ssh/authorized_keys/deploy` na VM); o job da loja confere `STORE_URL` e `API_URL` antes do build.
+
+| Verificação (Ubuntu 24.04, mesmo trecho do workflow) | Resultado |
+|---|---|
+| Chave limpa, com `\r`, com espaços nas pontas, com as linhas juntas | Aceita, mesma impressão digital da original |
+| Chave incompleta, vazia ou a pública no lugar da privada | Recusada com a mensagem de chave inválida |
+| `https://mo-dev...ts.net`, com barra final, e `...:8443` | Aceitos |
+| Sem `https://`, dois endereços juntos, espaço no começo | Recusados mostrando o valor |
+| `actionlint` nos dois repositórios | Sem apontamentos |

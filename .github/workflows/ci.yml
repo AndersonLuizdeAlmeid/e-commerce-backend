@@ -138,7 +138,17 @@ jobs:
         # O host sai da própria linha do known_hosts. Tenta de novo só se a conexão falhar (255), nunca se o deploy falhar.
         run: |
           install -d -m 700 ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
+          # A cópia da chave pode trazer \r ou espaços: o arquivo é refeito só com o conteúdo entre BEGIN e END.
+          body=$(printf '%s\n' "$SSH_KEY" | tr -d '\r' \
+            | sed -n '/BEGIN OPENSSH PRIVATE KEY/,/END OPENSSH PRIVATE KEY/{/-----/!p}' | tr -d ' \t\n')
+          { echo "-----BEGIN OPENSSH PRIVATE KEY-----"; fold -w 70 <<< "$body"; echo "-----END OPENSSH PRIVATE KEY-----"; } > ~/.ssh/deploy
+          chmod 600 ~/.ssh/deploy
+          if ! ssh-keygen -y -f ~/.ssh/deploy > /dev/null 2>&1; then
+            echo "::error::DEPLOY_SSH_KEY inválida. Cole a chave inteira, da linha -----BEGIN OPENSSH PRIVATE KEY----- até a linha -----END OPENSSH PRIVATE KEY-----."
+            exit 1
+          fi
+          # A impressão digital não é segredo: compare com a da VM (sudo ssh-keygen -lf /etc/ssh/authorized_keys/deploy).
+          echo "Chave de deploy: $(ssh-keygen -lf ~/.ssh/deploy)"
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           host=$(cut -d' ' -f1 ~/.ssh/known_hosts)
           for attempt in 1 2 3; do
