@@ -1,6 +1,6 @@
 # Entrega — Infra 1: ambiente de desenvolvimento na VM
 
-**Status:** Planejada em 07/11/2026. **Fatia I.1 implementada e validada localmente em 07/11/2026** (§9); a publicação no GHCR só roda no primeiro push na `main`.
+**Status:** Planejada em 07/11/2026. **Fatias I.1 e I.2 implementadas e validadas localmente em 07/11/2026** (§9), a I.2 num Ubuntu 22.04 simulado; falta rodar na VM de verdade, o que depende do merge na `main` (§6). A publicação no GHCR só roda no primeiro push na `main`.
 **Repositórios:** `e-commerce-backend` e `e-commerce-frontend` (branch `feat/ambiente-dev` nos dois).
 
 ## 1. Contexto
@@ -71,10 +71,10 @@ Na ordem em que vou pedir:
 
 1. **Snapshot da VM** na Contabo, antes de rodar qualquer coisa nela. Junto, **remover o Seq** (decidido em 07/11/2026).
 2. **Reiniciar a VM** quando for conveniente: há 53 atualizações e o Ubuntu pede reinício. As outras aplicações voltam sozinhas se tiverem `restart` configurado; o script mostra quais não têm antes de você reiniciar.
-3. **Conta no Tailscale** (plano pessoal grátis) e o Tailscale instalado no seu PC.
-4. No Tailscale: colar a ACL que eu preparar e criar um **OAuth client** para o GitHub (eu digo os campos).
-5. Rodar **um comando** na VM como root, pelo SSH atual ou pelo VNC. Ele endurece a VM e a coloca na rede privada, sem mexer nas outras aplicações.
-6. No GitHub: criar o ambiente `dev` com os segredos, ou fazer `gh auth login` para eu criar.
+3. **Conta no Tailscale** (plano pessoal grátis) e o Tailscale instalado no seu PC. No painel: colar `deploy/dev/tailscale-policy.hujson`, confirmar o MagicDNS e ligar os certificados HTTPS.
+4. **Merge das fatias I.1 e I.2 na `main`**: o `bootstrap.sh` baixa da `main` os scripts que instala na VM, e o `mo-deploy` só aceita commits dela.
+5. Rodar o `bootstrap.sh` na VM como root, pelo SSH atual ou pelo VNC (`deploy/dev/README.md`). Ele endurece a VM e a coloca na rede privada, sem mexer nas outras aplicações.
+6. Na I.3: criar um **OAuth client** do Tailscale para o GitHub e o ambiente `dev` com os segredos, ou fazer `gh auth login` para eu criar.
 7. Trocar a **senha do VNC** da Contabo por uma forte e guardar no seu gerenciador de senhas: é a porta de emergência.
 
 ## 7. Como validar
@@ -115,3 +115,30 @@ Na ordem em que vou pedir:
 | Frontend | Lint, typecheck e 177 testes passando |
 
 **Não validado:** a publicação no GHCR, o SBOM e o atestado, que só rodam no push na `main`; e o `environment` vazio no job `image` do frontend em PR, conferido no primeiro PR.
+
+### I.2 — Ensaio (07/11/2026)
+
+Feito num container Ubuntu 22.04 com systemd e Docker próprios, com duas "aplicações de fora" publicadas em `0.0.0.0:3000` e `0.0.0.0:3001` (uma sem `restart`), imagens num registro local e o repositório clonado de um commit de ensaio. O Tailscale foi instalado, mas não entrou na rede (`SKIP_TAILSCALE_UP=1`).
+
+| Verificação | Resultado |
+|---|---|
+| `bootstrap.sh` na primeira vez e de novo | Ok. Na segunda, segredos e chave mantidos; com `--new-deploy-key`, chave trocada |
+| Aviso de containers sem `restart` | Listou `outra_app_sem_restart` |
+| Firewall visto de fora | Aplicações de fora (3000 e 3001) respondendo; SSH aberto; programa escutando direto no host (8088) bloqueado; portas da loja (3100, 3101, 3103, 3104) fechadas |
+| SSH efetivo (`sshd -T`) | Senha e teclado interativo desligados, root só com chave, `MaxAuthTries 4`, chaves do deploy em `/etc/ssh/authorized_keys/deploy` (do root) |
+| `fail2ban` | Jail `sshd` ativo |
+| Permissões | `/opt/mo` `root:deploy 750`, `.env` `640`, scripts em `/usr/local/bin` do root |
+| Chave de deploy: terminal, `bash`, `status; id`, túnel | Terminal negado; os outros recusados pelo `mo-deploy` |
+| Commit que não está na branch | Recusado |
+| Loja antes do backend | Recusada com mensagem |
+| Deploy do backend e depois da loja | Ok; `status` mostra os três digests e os serviços de pé |
+| API quebrada (porta errada) | Falhou no `/health/ready`, voltou sozinha para a anterior, saiu com 1 |
+| Loja quebrada (porta errada) | Falhou no healthcheck, voltou sozinha para a anterior, saiu com 1 |
+| Dois deploys ao mesmo tempo | O segundo esperou o primeiro terminar (`flock`) |
+| Backup | Dump gerado com permissão 600; restaurado num banco à parte com os 21 produtos |
+| Containers da loja | API e Mailpit só leitura; todos com `cap_drop: ALL` e `no-new-privileges`; nenhum como root |
+| `shellcheck` nos três scripts | Sem apontamentos |
+
+**Achados corrigidos no ensaio:** o clone falhava por permissão em `/opt/mo` (pasta `src` agora criada antes) e o primeiro deploy morria sem mensagem quando ainda não havia `images.env` (`pipefail`).
+
+**Não validado:** a entrada no Tailscale, o `tailscale serve` com HTTPS (inclusive se aceita a porta 8025) e o comportamento com o Docker e o SSH da Contabo. Isso acontece na VM, no passo 5 do §6.
