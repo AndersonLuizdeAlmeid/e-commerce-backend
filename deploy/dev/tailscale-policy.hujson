@@ -1,0 +1,20 @@
+// Política da rede privada do ambiente de dev (specs/entregas/infra-1-ambiente-dev.md, I3 e I4).
+// Colar em https://login.tailscale.com/admin/acls/file, no lugar da política padrão.
+{
+  // Só o dono da rede pode marcar máquinas com estas tags.
+  "tagOwners": {
+    "tag:mo-dev": ["autogroup:admin"],
+    "tag:ci": ["autogroup:admin"],
+  },
+
+  "acls": [
+    // Seus aparelhos alcançam a VM: loja (443), API (8443), Mailpit (8025) e SSH.
+    { "action": "accept", "src": ["autogroup:member"], "dst": ["*:*"] },
+    // O runner do GitHub Actions só alcança o SSH da VM, e nada mais.
+    { "action": "accept", "src": ["tag:ci"], "dst": ["tag:mo-dev:22"] },
+    // A VM não inicia conexão com nenhum aparelho da rede: não há regra com tag:mo-dev na origem.
+  ],
+
+  // Tailscale SSH desligado: o acesso continua pelo OpenSSH, com chave.
+  "ssh": [],
+}

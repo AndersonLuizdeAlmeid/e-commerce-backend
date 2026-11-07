@@ -1,0 +1,3 @@
+# Scripts e configuração que rodam na VM Linux: sempre LF, mesmo com core.autocrlf no Windows.
+*.sh text eol=lf
+deploy/** text eol=lf
