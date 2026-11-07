@@ -108,3 +108,44 @@ jobs:
             echo "- \`${{ steps.names.outputs.api }}@${{ steps.push-api.outputs.digest }}\`"
             echo "- \`${{ steps.names.outputs.migrator }}@${{ steps.push-migrator.outputs.digest }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # Sobe a versão publicada na VM do ambiente dev (entrega infra-1, I.3). O runner entra na rede privada só durante o
+  # job, e a chave de deploy só consegue chamar o mo-deploy, que valida o pedido, roda o migrator e volta sozinho se a
+  # API não ficar saudável.
+  deploy:
+    runs-on: ubuntu-latest
+    needs: images
+    if: github.event_name == 'push'
+    environment: dev
+    concurrency:
+      group: deploy-dev
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Deploy na VM
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          API_DIGEST: ${{ needs.images.outputs.api }}
+          MIGRATOR_DIGEST: ${{ needs.images.outputs.migrator }}
+        # O host sai da própria linha do known_hosts. Tenta de novo só se a conexão falhar (255), nunca se o deploy falhar.
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          host=$(cut -d' ' -f1 ~/.ssh/known_hosts)
+          for attempt in 1 2 3; do
+            status=0
+            ssh -i ~/.ssh/deploy -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=30 "deploy@$host" \
+              backend "$GITHUB_SHA" "$API_DIGEST" "$MIGRATOR_DIGEST" || status=$?
+            [[ $status -ne 255 ]] && exit "$status"
+            echo "Sem conexão com a VM (tentativa $attempt)"; sleep 10
+          done
+          exit 255

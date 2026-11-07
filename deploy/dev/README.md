@@ -22,12 +22,18 @@ Loja, API e banco numa VM compartilhada, acessíveis só pela rede privada do Ta
 
    ```bash
    curl -fsSL https://raw.githubusercontent.com/AndersonLuizdeAlmeid/e-commerce-backend/main/deploy/dev/bootstrap.sh -o /root/bootstrap.sh
-   bash /root/bootstrap.sh
+   UFW_ALLOW="80/tcp 443/tcp" bash /root/bootstrap.sh
    ```
+
+   `UFW_ALLOW` lista as portas de programas que rodam fora do Docker e devem continuar públicas (nesta VM, o nginx
+   nas 80 e 443). Sem isso, o script não liga o firewall para não derrubá-los.
 
    O script para no passo do Tailscale e mostra um link: abra no navegador e aprove a VM. No fim ele mostra os
    endereços, as variáveis e os segredos para o GitHub. **A chave de deploy aparece só nessa hora.**
-5. Trocar a **senha do VNC** da Contabo por uma forte e guardá-la: é o acesso de emergência.
+5. No GitHub, ambiente `dev` dos dois repositórios (restrito à `main`): segredos `DEPLOY_SSH_KEY` (a chave mostrada
+   pelo script), `DEPLOY_KNOWN_HOSTS`, `TS_OAUTH_CLIENT_ID` e `TS_OAUTH_SECRET` (credencial OAuth do Tailscale só com
+   Auth Keys de escrita e `tag:ci`). No frontend, também as variáveis `STORE_URL` e `API_URL`.
+6. Trocar a **senha do VNC** da Contabo por uma forte e guardá-la: é o acesso de emergência.
 
 ## No dia a dia
 
@@ -40,7 +46,8 @@ Loja, API e banco numa VM compartilhada, acessíveis só pela rede privada do Ta
 | Logs | `cd /opt/mo/src/deploy/dev && sudo docker compose -p mo-dev logs -f api` |
 | Banco pelo DBeaver | Conexão com túnel SSH para a VM pelo nome do Tailscale, banco em `127.0.0.1:3104`, senha em `POSTGRES_PASSWORD` |
 | Restaurar backup | `docker exec -i mo-dev-postgres-1 pg_restore -U ecommerce -d ecommerce --clean --if-exists < /opt/mo/backups/ARQUIVO.dump` |
-| Trocar a chave de deploy | `sudo bash /root/bootstrap.sh --new-deploy-key` e atualizar o segredo no GitHub |
+| Trocar a chave de deploy | `sudo UFW_ALLOW="80/tcp 443/tcp" bash /root/bootstrap.sh --new-deploy-key` e atualizar o segredo `DEPLOY_SSH_KEY` nos dois repositórios |
+| Publicar uma versão | Push na `main`: o CI testa, publica as imagens e o job `deploy` sobe na VM. Se falhar, a versão anterior volta sozinha e o job fica vermelho |
 | Aplicar mudanças do `bootstrap.sh`, `mo-deploy.sh` ou `mo-backup.sh` | Baixar de novo e rodar o `bootstrap.sh`: os scripts instalados vêm da `main` |
 
 ## Se perder o acesso

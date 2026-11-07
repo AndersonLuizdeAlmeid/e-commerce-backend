@@ -1,6 +1,6 @@
 # Entrega — Infra 1: ambiente de desenvolvimento na VM
 
-**Status:** Planejada em 07/11/2026. **Fatias I.1 e I.2 implementadas e validadas localmente em 07/11/2026** (§9), a I.2 num Ubuntu 22.04 simulado; falta rodar na VM de verdade, o que depende do merge na `main` (§6). A publicação no GHCR só roda no primeiro push na `main`.
+**Status:** Planejada em 07/11/2026. **I.1 e I.2 na `main` e a VM preparada em 07/11/2026** (§9). **I.3 implementada e ensaiada**; o primeiro deploy automático acontece no merge, depois da chave nova (§9, I.3).
 **Repositórios:** `e-commerce-backend` e `e-commerce-frontend` (branch `feat/ambiente-dev` nos dois).
 
 ## 1. Contexto
@@ -34,7 +34,7 @@ A VM é uma **Contabo Cloud VPS 10** (4 vCPU, 8 GB, 150 GB, Ubuntu 22.04 x86, re
 | I2 | Qual versão sobe | Tag `sha-<commit>` para leitura humana, mas o deploy usa o **digest** (`imagem@sha256:…`) | Digest não pode ser trocado depois de publicado |
 | I3 | Acesso à VM | **Tailscale** na VM e no seu PC. O SSH público **continua aberto**, porque outros deploys dependem dele, mas endurecido: `fail2ban`, e senha desligada **só se** o histórico de logins mostrar que todos entram por chave (o script confere antes e, se não, avisa e não mexe). `ufw` com entrada negada por padrão, liberando só a 22 e a interface do Tailscale; ele não afeta as portas que o Docker publica, então as outras aplicações seguem no ar. O firewall da Contabo não é ligado | Não derrubar o que já roda. Recuperação pelo VNC da Contabo |
 | I4 | Como o GitHub chega à VM | Ação oficial do Tailscale com **OAuth client**, nó efêmero com a tag `tag:ci`. A ACL deixa `tag:ci` falar **só** com a porta 22 da VM | O runner entra na rede só durante o deploy e não enxerga mais nada |
-| I5 | O que a chave de deploy pode fazer | Usuário `deploy` com **comando forçado** no `authorized_keys` (`mo-deploy`), sem terminal, sem túnel. O script aceita só `backend <commit> <digest-api> <digest-migrator>` e `web <digest>`, valida o formato e recusa o resto. Host da VM conferido por `known_hosts` fixo | Objetivo 4 |
+| I5 | O que a chave de deploy pode fazer | Usuário `deploy` com **comando forçado** no `authorized_keys` (`mo-deploy`), sem terminal, sem túnel e **só aceita vindo da rede privada** (`from=` com as faixas do Tailscale), embora a porta 22 seja pública. O script aceita só `backend <commit> <digest-api> <digest-migrator>` e `web <digest>`, valida o formato e recusa o resto. Host da VM conferido por `known_hosts` fixo | Objetivo 4 |
 | I6 | Segredos da aplicação | Gerados **na VM** pelo script de preparação (senha do banco, chave do JWT, chave interna, segredo da revalidação, chaves do RustFS), em `/opt/mo/.env` com permissão 600. No GitHub ficam só: OAuth do Tailscale, chave de deploy e `known_hosts` | Objetivo 3 |
 | I7 | De onde vem o `compose.yml` da VM | Versionado no backend em `deploy/dev/`. A VM mantém um clone **só leitura** do repositório público, e o deploy do backend faz checkout do mesmo commit da imagem | Configuração e imagem andam juntas, e a chave de deploy não precisa enviar arquivos |
 | I8 | Nada de dado da VM no repositório | IP, nome da rede privada e endereços ficam em **variáveis do ambiente `dev`** no GitHub, não em arquivo | Os repositórios são públicos |
@@ -142,3 +142,32 @@ Feito num container Ubuntu 22.04 com systemd e Docker próprios, com duas "aplic
 **Achados corrigidos no ensaio:** o clone falhava por permissão em `/opt/mo` (pasta `src` agora criada antes) e o primeiro deploy morria sem mensagem quando ainda não havia `images.env` (`pipefail`).
 
 **Não validado:** a entrada no Tailscale, o `tailscale serve` com HTTPS (inclusive se aceita a porta 8025) e o comportamento com o Docker e o SSH da Contabo. Isso acontece na VM, no passo 5 do §6.
+
+### Preparação da VM real (07/11/2026)
+
+- `bootstrap.sh` rodou na VM: swap de 2 GB, usuário `deploy`, Tailscale (`mo-dev.tail9eee4f.ts.net`, `tag:mo-dev`) e `tailscale serve` com HTTPS nas portas 443, 8443 e **8025** (aceita).
+- Nenhum container sem `restart`. O Seq foi removido.
+- **Senha no SSH continua ligada:** 8 logins por senha nos últimos 30 dias.
+- **Firewall não foi ligado:** um nginx fora do Docker escuta nas portas 80 e 443. Daí a opção `UFW_ALLOW` da I.3.
+- **A chave de deploy gerada vazou** num print. Ela é trocada na I.3 pela chave presa à rede privada.
+- Visto do PC: 3100 a 3104, 8025, 8443 e 5341 fechadas na internet; 22, 80, 443 e as portas das outras aplicações abertas como antes; HTTPS pela rede privada com certificado válido.
+- GitHub: ambiente `dev` nos dois repositórios, restrito à `main`, com `DEPLOY_KNOWN_HOSTS`, `TS_OAUTH_CLIENT_ID` e `TS_OAUTH_SECRET`; no frontend, as variáveis `STORE_URL` e `API_URL`. Credencial do Tailscale só com Auth Keys (escrita) e `tag:ci`.
+
+### I.3 — Implementação e ensaio (07/11/2026)
+
+- Job `deploy` nos dois workflows, só em push na `main`, no ambiente `dev`, com `concurrency` própria; entra na rede pela ação do Tailscale (OAuth, `tag:ci`, nó efêmero) e chama o `mo-deploy` por SSH com o host conferido pelo `DEPLOY_KNOWN_HOSTS`. Tenta de novo só quando a conexão falha, nunca quando o deploy falha.
+- `bootstrap.sh`: `UFW_ALLOW` libera portas de programas fora do Docker e só então liga o firewall; valor fora do formato `porta/protocolo` é recusado. A chave de deploy passa a ter `from=` com as faixas do Tailscale, e o script avisa quando a chave atual não tem.
+
+| Verificação (Ubuntu 22.04 simulado) | Resultado |
+|---|---|
+| Programas fora do Docker nas portas 80 e 8088, sem `UFW_ALLOW` | Firewall não ligado, as duas listadas |
+| `UFW_ALLOW="80/tcp"` com a 8088 ainda escutando | Firewall não ligado, só a 8088 listada |
+| `UFW_ALLOW="80;rm"` | Recusado antes de qualquer mudança |
+| `UFW_ALLOW="80/tcp 443/tcp"` sem a 8088 | Firewall ligado com 22, 80, 443 e a interface do Tailscale |
+| Chave nova vinda de 127.0.0.1 | Recusada |
+| Chave nova vinda de um endereço da faixa do Tailscale | Aceita (`status` respondeu) |
+| `actionlint` e `shellcheck` | Sem apontamentos |
+
+**Ordem para ligar:** rodar o `bootstrap.sh` desta branch com `UFW_ALLOW="80/tcp 443/tcp"` e `--new-deploy-key`; cadastrar `DEPLOY_SSH_KEY` no ambiente `dev` dos dois repositórios; merge do backend (o primeiro deploy sobe banco e API); merge do frontend (a loja só sobe depois do backend).
+
+**Não validado:** a ação do Tailscale com a credencial real e o deploy de verdade, que acontecem no merge.
