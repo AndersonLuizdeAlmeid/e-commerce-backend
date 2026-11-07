@@ -5,13 +5,21 @@ on:
     branches: [main]
   pull_request:
 
+# Ações fixadas por SHA de commit (entrega infra-1, I12); o comentário diz a versão.
+permissions:
+  contents: read
+
+env:
+  # Mesma versão e digest validados localmente; imagem em vez da trivy-action, que já teve tags sequestradas.
+  TRIVY_IMAGE: aquasec/trivy:0.76.2@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           global-json-file: global.json
 
@@ -22,10 +30,81 @@ jobs:
       - run: dotnet test ECommerce.sln -c Release --no-build --collect:"XPlat Code Coverage"
       - run: dotnet list ECommerce.sln package --vulnerable --include-transitive
 
-  docker:
+  # Em PR só constrói e verifica; na main publica no GHCR (públicas, I1) com SBOM e atestado de origem.
+  images:
     runs-on: ubuntu-latest
     needs: build-and-test
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      api: ${{ steps.push-api.outputs.digest }}
+      migrator: ${{ steps.push-migrator.outputs.digest }}
     steps:
-      - uses: actions/checkout@v4
-      - run: docker build --target migrator -t ecommerce-migrator .
-      - run: docker build --target api -t ecommerce-api .
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Nomes das imagens
+        id: names
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          {
+            echo "api=ghcr.io/$owner/ecommerce-api"
+            echo "migrator=ghcr.io/$owner/ecommerce-migrator"
+            echo "tag=sha-${GITHUB_SHA::12}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build (para verificar)
+        run: |
+          docker buildx build --target api --load -t scan/api .
+          docker buildx build --target migrator --load -t scan/migrator .
+
+      # Barra vulnerabilidade crítica com correção disponível; altas só aparecem no log.
+      - name: Trivy
+        run: |
+          for image in scan/api scan/migrator; do
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGE" image --quiet \
+              --scanners vuln --ignore-unfixed --severity HIGH,CRITICAL "$image"
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGE" image --quiet \
+              --scanners vuln --ignore-unfixed --severity CRITICAL --exit-code 1 "$image"
+          done
+
+      - if: github.event_name == 'push'
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - if: github.event_name == 'push'
+        id: push-api
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: api
+          push: true
+          tags: ${{ steps.names.outputs.api }}:${{ steps.names.outputs.tag }}
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          provenance: mode=max
+          sbom: true
+
+      - if: github.event_name == 'push'
+        id: push-migrator
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: migrator
+          push: true
+          tags: ${{ steps.names.outputs.migrator }}:${{ steps.names.outputs.tag }}
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          provenance: mode=max
+          sbom: true
+
+      - if: github.event_name == 'push'
+        name: Resumo
+        run: |
+          {
+            echo "### Imagens publicadas"
+            echo "- \`${{ steps.names.outputs.api }}@${{ steps.push-api.outputs.digest }}\`"
+            echo "- \`${{ steps.names.outputs.migrator }}@${{ steps.push-migrator.outputs.digest }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,142 @@
+# Ambiente de desenvolvimento na VM (specs/entregas/infra-1-ambiente-dev.md). Quem sobe é o mo-deploy, com:
+#   docker compose --env-file /opt/mo/.env --env-file /opt/mo/state/images.env -f compose.yml up -d
+# /opt/mo/.env guarda os segredos, gerados na própria VM; images.env, os digests da versão no ar.
+# A VM é compartilhada com outras aplicações: portas só em 127.0.0.1, na faixa 31xx, e nomes com o prefixo mo-dev.
+name: mo-dev
+
+x-base: &base
+  restart: unless-stopped
+  security_opt: ["no-new-privileges:true"]
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+x-job: &job
+  <<: *base
+  restart: "no"
+
+services:
+  postgres:
+    <<: *base
+    image: postgres:17
+    environment:
+      POSTGRES_DB: ecommerce
+      POSTGRES_USER: ecommerce
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+    # Só para o DBeaver, por túnel SSH pela rede privada.
+    ports: ["127.0.0.1:3104:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ecommerce -d ecommerce"]
+      interval: 5s
+      retries: 10
+    mem_limit: 1g
+
+  mailpit:
+    <<: *base
+    image: axllent/mailpit:v1.27
+    user: "65534:65534"
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: [/tmp]
+    # Caixa de entrada; o SMTP (1025) fica só na rede interna.
+    ports: ["127.0.0.1:3103:8025"]
+    mem_limit: 128m
+
+  # Bucket das fotos, só na rede interna: o navegador recebe as fotos pelo next/image da loja.
+  rustfs:
+    <<: *base
+    image: rustfs/rustfs:1.0.4
+    cap_drop: [ALL]
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:?}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:?}
+      RUSTFS_CONSOLE_ENABLE: "false"
+    volumes: [rustfsdata:/data]
+    mem_limit: 512m
+
+  rustfs-init:
+    <<: *job
+    image: amazon/aws-cli:2.39.3
+    cap_drop: [ALL]
+    environment:
+      AWS_ACCESS_KEY_ID: ${RUSTFS_ACCESS_KEY:?}
+      AWS_SECRET_ACCESS_KEY: ${RUSTFS_SECRET_KEY:?}
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://rustfs:9000
+    entrypoint: >
+      /bin/sh -c "until aws s3api list-buckets > /dev/null 2>&1; do sleep 1; done;
+      aws s3api head-bucket --bucket mo-images 2> /dev/null || aws s3api create-bucket --bucket mo-images;
+      aws s3api put-bucket-policy --bucket mo-images --policy
+      '{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":\"*\",\"Action\":[\"s3:GetObject\"],\"Resource\":[\"arn:aws:s3:::mo-images/*\"]}]}'"
+    depends_on: [rustfs]
+
+  migrator:
+    <<: *job
+    image: ${MIGRATOR_IMAGE:?}
+    cap_drop: [ALL]
+    read_only: true
+    environment:
+      DOTNET_ENVIRONMENT: Development
+      ConnectionStrings__Database: Host=postgres;Port=5432;Database=ecommerce;Username=ecommerce;Password=${POSTGRES_PASSWORD:?}
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    <<: *base
+    image: ${API_IMAGE:?}
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: [/tmp]
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__Database: Host=postgres;Port=5432;Database=ecommerce;Username=ecommerce;Password=${POSTGRES_PASSWORD:?}
+      Jwt__SigningKey: ${JWT_SIGNING_KEY:?}
+      RateLimiting__InternalKey: ${INTERNAL_KEY:?}
+      AdminSeed__Email: ${ADMIN_EMAIL:?}
+      AdminSeed__Password: ${ADMIN_PASSWORD:?}
+      Cors__AllowedOrigins__0: ${STORE_URL:?}
+      Email__FrontendBaseUrl: ${STORE_URL:?}
+      Email__Smtp__Host: mailpit
+      Email__Smtp__Port: "1025"
+      ImageStorage__ServiceUrl: http://rustfs:9000
+      ImageStorage__AccessKey: ${RUSTFS_ACCESS_KEY:?}
+      ImageStorage__SecretKey: ${RUSTFS_SECRET_KEY:?}
+      ImageStorage__Bucket: mo-images
+      ImageStorage__PublicBaseUrl: http://rustfs:9000/mo-images
+      Storefront__RevalidateUrl: http://web:3000/api/revalidate
+      Storefront__RevalidateSecret: ${REVALIDATE_SECRET:?}
+      # O tailscale serve chega pela porta publicada, que entra pelo gateway desta rede.
+      ForwardedHeaders__KnownNetworks__0: 172.30.231.0/24
+    ports: ["127.0.0.1:3101:8080"]
+    mem_limit: 768m
+    depends_on:
+      migrator: { condition: service_completed_successfully }
+      mailpit: { condition: service_started }
+      rustfs-init: { condition: service_completed_successfully }
+
+  # Não é só leitura: o Next.js grava o cache das páginas (ISR) dentro de .next.
+  web:
+    <<: *base
+    image: ${WEB_IMAGE:?}
+    cap_drop: [ALL]
+    environment:
+      API_INTERNAL_URL: http://api:8080
+      API_INTERNAL_KEY: ${INTERNAL_KEY:?}
+      REVALIDATE_SECRET: ${REVALIDATE_SECRET:?}
+    ports: ["127.0.0.1:3100:3000"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/robots.txt"]
+      interval: 10s
+      retries: 6
+    mem_limit: 768m
+    depends_on: [api]
+
+networks:
+  default:
+    ipam:
+      config: [{ subnet: 172.30.231.0/24 }]
+
+volumes:
+  pgdata: {}
+  rustfsdata: {}
