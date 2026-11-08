@@ -21,18 +21,28 @@ public enum StockMovementType
     In,
     Out,
     Adjustment,
+    OrderPlaced,
+    OrderCancelled,
 }
 
-/// <summary>Registro de uma mudança de saldo (RF-052). <see cref="Quantity"/> é o delta com sinal.</summary>
+/// <summary>
+/// Registro de uma mudança de saldo (RF-052). <see cref="Quantity"/> é o delta com sinal. <see cref="PerformedBy"/> nulo
+/// é o sistema (job de 48 h); <see cref="OrderId"/> liga a baixa ou a devolução ao pedido.
+/// </summary>
 public sealed record StockMovement(
     Guid Id,
     VariantId VariantId,
     StockMovementType Type,
     int Quantity,
     string Reason,
-    UserId PerformedBy,
-    DateTime CreatedAtUtc)
+    UserId? PerformedBy,
+    DateTime CreatedAtUtc,
+    Guid? OrderId = null)
 {
+    /// <summary>Os tipos que a administradora escolhe no painel; os de pedido só o checkout e o cancelamento gravam.</summary>
+    public static readonly IReadOnlySet<StockMovementType> ManualTypes =
+        new HashSet<StockMovementType> { StockMovementType.In, StockMovementType.Out, StockMovementType.Adjustment };
+
     public const int ReasonMaxLength = 200;
 }
 
@@ -84,7 +94,19 @@ public sealed class StockItem
             ? Result.Failure(InventoryErrors.InvalidQuantity)
             : Apply(StockMovementType.Adjustment, newQuantity - QuantityOnHand, reason, performedBy, nowUtc);
 
-    private Result Apply(StockMovementType type, int delta, string reason, UserId performedBy, DateTime nowUtc)
+    /// <summary>Baixa da compra (RF-040 CA4). Saldo insuficiente falha sem mudar nada.</summary>
+    public Result ReserveForOrder(int quantity, Guid orderId, string reason, UserId customerId, DateTime nowUtc) =>
+        quantity <= 0
+            ? Result.Failure(InventoryErrors.InvalidQuantity)
+            : Apply(StockMovementType.OrderPlaced, -quantity, reason, customerId, nowUtc, orderId);
+
+    /// <summary>Devolução do pedido cancelado (RF-043 CA2, RF-046 CA1).</summary>
+    public Result ReturnFromOrder(int quantity, Guid orderId, string reason, UserId? performedBy, DateTime nowUtc) =>
+        quantity <= 0
+            ? Result.Failure(InventoryErrors.InvalidQuantity)
+            : Apply(StockMovementType.OrderCancelled, quantity, reason, performedBy, nowUtc, orderId);
+
+    private Result Apply(StockMovementType type, int delta, string reason, UserId? performedBy, DateTime nowUtc, Guid? orderId = null)
     {
         var trimmedReason = reason?.Trim() ?? string.Empty;
         if (trimmedReason.Length is 0 or > StockMovement.ReasonMaxLength)
@@ -110,7 +132,7 @@ public sealed class StockItem
 
         QuantityOnHand = (int)quantity;
         UpdatedAtUtc = nowUtc;
-        _movements.Add(new StockMovement(Guid.CreateVersion7(), VariantId, type, delta, trimmedReason, performedBy, nowUtc));
+        _movements.Add(new StockMovement(Guid.CreateVersion7(), VariantId, type, delta, trimmedReason, performedBy, nowUtc, orderId));
         return Result.Success();
     }
 }

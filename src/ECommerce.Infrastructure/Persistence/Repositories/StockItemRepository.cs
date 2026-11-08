@@ -35,8 +35,8 @@ internal sealed class StockItemRepository(IUnitOfWork unitOfWork) : IStockItemRe
 
         await unitOfWork.Connection.ExecuteAsync(Command(
             """
-            INSERT INTO inventory.stock_movements (id, variant_id, type, quantity, reason, performed_by, created_at)
-            VALUES (@Id, @VariantId, @Type, @Quantity, @Reason, @PerformedBy, @CreatedAt)
+            INSERT INTO inventory.stock_movements (id, variant_id, type, quantity, reason, order_id, performed_by, created_at)
+            VALUES (@Id, @VariantId, @Type, @Quantity, @Reason, @OrderId, @PerformedBy, @CreatedAt)
             """,
             item.NewMovements.Select(movement => new
             {
@@ -45,7 +45,8 @@ internal sealed class StockItemRepository(IUnitOfWork unitOfWork) : IStockItemRe
                 Type = movement.Type.ToString(),
                 movement.Quantity,
                 movement.Reason,
-                PerformedBy = movement.PerformedBy.Value,
+                movement.OrderId,
+                PerformedBy = movement.PerformedBy?.Value,
                 CreatedAt = movement.CreatedAtUtc,
             }).ToList(),
             cancellationToken));

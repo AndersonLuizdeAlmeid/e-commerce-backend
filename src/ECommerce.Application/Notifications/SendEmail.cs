@@ -1,11 +1,14 @@
 namespace ECommerce.Application.Notifications;
 
-/// <summary>Catálogo de e-mails (arquivo 23 §3). Só os de conta existem na Fase 2A.</summary>
+/// <summary>Catálogo de e-mails (arquivo 23 §3): os de conta (Fase 2A) e os de pedido (Fase 4).</summary>
 public static class EmailTemplates
 {
     public const string WelcomeAndConfirmation = "EM-01";
     public const string PasswordReset = "EM-02";
     public const string PasswordChanged = "EM-03";
+    public const string OrderPlaced = "EM-04";
+    public const string PaymentReminder = "EM-05";
+    public const string OrderCancelled = "EM-10";
 }
 
 /// <summary>

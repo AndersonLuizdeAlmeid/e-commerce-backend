@@ -87,7 +87,7 @@ internal sealed class MoveStockValidator : AbstractValidator<MoveStockCommand>
     public MoveStockValidator()
     {
         RuleFor(x => x.Type)
-            .Must(type => Enum.TryParse<StockMovementType>(type, ignoreCase: false, out var parsed) && Enum.IsDefined(parsed) && type == parsed.ToString())
+            .Must(type => Enum.TryParse<StockMovementType>(type, ignoreCase: false, out var parsed) && StockMovement.ManualTypes.Contains(parsed) && type == parsed.ToString())
             .WithMessage("Escolha entrada, saída ou ajuste.");
         RuleFor(x => x.Quantity)
             .GreaterThan(0).When(x => x.Type != nameof(StockMovementType.Adjustment)).WithMessage("Informe uma quantidade maior que zero.");

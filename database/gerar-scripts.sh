@@ -116,3 +116,7 @@ gen database/fase-3-4-schema.sql schemaversions "$P.Migrations" \
 gen database/fase-4-1-schema.sql schemaversions "$P.Migrations" \
   "Fase 4.1 — endereços do cliente" "$P.Migrations.V0016__shipping_rules.sql" \
   $M/V0017__customer_addresses.sql
+
+gen database/fase-4-2-schema.sql schemaversions "$P.Migrations" \
+  "Fase 4.2 — pedidos, itens, histórico e valor da embalagem" "$P.Migrations.V0017__customer_addresses.sql" \
+  $M/V0018__ordering.sql

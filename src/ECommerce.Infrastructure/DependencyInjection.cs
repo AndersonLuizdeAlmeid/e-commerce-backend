@@ -11,6 +11,7 @@ using ECommerce.Domain.Catalog;
 using ECommerce.Domain.Customers;
 using ECommerce.Domain.Identity;
 using ECommerce.Domain.Inventory;
+using ECommerce.Domain.Ordering;
 using ECommerce.Domain.Shipping;
 using ECommerce.Infrastructure.Authentication;
 using ECommerce.Infrastructure.Caching;
@@ -65,6 +66,7 @@ public static class DependencyInjection
         services.AddScoped<IUserTokenRepository, UserTokenRepository>();
         services.AddScoped<ICustomerRepository, CustomerRepository>();
         services.AddScoped<IAddressBookRepository, AddressBookRepository>();
+        services.AddScoped<IOrderRepository, OrderRepository>();
         services.AddScoped<ICategoryRepository, CategoryRepository>();
         services.AddScoped<ISlugHistory, SlugHistoryRepository>();
         services.AddScoped<IColorRepository, ColorRepository>();
@@ -137,6 +139,7 @@ public static class DependencyInjection
         services.AddScoped<IOutboxMessageHandler, SendEmailHandler>();
         services.AddHostedService<OutboxProcessor>();
         services.AddHostedService<MaintenanceJob>();
+        services.AddHostedService<OrderJobs>();
 
         var emailSection = configuration.GetSection(EmailSettings.SectionName);
         services.AddOptions<EmailSettings>()

@@ -1,6 +1,6 @@
 # Entrega — Fase 4: Checkout e pagamento
 
-**Status:** Planejada em 08/11/2026. **Fatia 4.1 implementada e validada com banco, API em container e a tela no navegador em 08/11/2026** (seção 8).
+**Status:** Planejada em 08/11/2026. **Fatias 4.1 (endereços) e 4.2 (pedido) implementadas e validadas com banco, API em container e as telas no navegador em 08/11/2026** (seção 8). 4.3 a 4.5 não iniciadas.
 **Repositórios:** `e-commerce-backend` e `e-commerce-frontend` (branch `feat/fase-4` nos dois).
 
 ## 1. Contexto
@@ -79,7 +79,7 @@ Cada script novo entra no `database/gerar-scripts.sh`, que gera um arquivo por f
 | Grupo | Rotas | Acesso e limite | Fatia |
 |-------|-------|-----------------|-------|
 | `me/addresses` | `GET`, `POST`, `PUT {id}`, `DELETE {id}`, `PUT {id}/default` | Customer, `customer-write` | 4.1 |
-| `orders` | `POST /` (com `Idempotency-Key`), `GET /`, `GET {id}`, `POST {id}/cancel` | Customer, `customer-write` | 4.2 |
+| `orders` | `POST /` (com `Idempotency-Key`), `GET /`, `GET {id}`, `POST {id}/cancel`, `GET settings` (valor da embalagem) | Customer, `customer-write` | 4.2 |
 | `orders/{id}/payments` | `POST` (com `Idempotency-Key`), `GET current` | Customer, política nova `payment` (poucas tentativas por minuto) | 4.3 |
 | `orders/{id}/payments/simulate-approval` | `POST`, **só em Development e com o gateway falso** | Customer | 4.3 |
 | `webhooks/payments/{provider}` | `POST` | Anônimo, sem CORS, política própria, assinatura obrigatória (P7), responde `200` rápido | 4.3 |
@@ -169,7 +169,7 @@ Primeiro só build (A), depois banco pelo DBeaver (B) e por último execução (
 | Fatia | Situação |
 |-------|----------|
 | 4.1 — Endereços | Implementada e validada em 08/11/2026 |
-| 4.2 — Pedido | Não iniciada |
+| 4.2 — Pedido | Implementada e validada em 08/11/2026; falta aprovar o visual do checkout |
 | 4.3 — PIX e webhook | Não iniciada |
 | 4.4 — Cartão | Não iniciada |
 | 4.5 — Estornos | Não iniciada |
@@ -191,3 +191,34 @@ Primeiro só build (A), depois banco pelo DBeaver (B) e por último execução (
 | B1 | ✅ `fase-4-1-schema.sql` aplicado pelo `psql` no banco local; a segunda execução recusa com "Script já aplicado"; o migrator do container vê o script como aplicado |
 | C1 | ✅ API em container: cadastro 201 com padrão automático; UF errada → 400 com o erro em `state`; consulta de CEP 200. Na loja: CEP de Belo Horizonte preencheu rua, bairro, cidade e UF e levou o cursor ao número; novo endereço como padrão; apagar o padrão passou o posto ao outro; tela de 375 px sem rolagem lateral |
 | Celular de verdade | ⏳ fica para o C13, junto com o checkout |
+
+### 4.2 — Validação (08/11/2026)
+
+**Ajustes ao plano feitos na fatia:**
+- `shipping_days` aceita nulo: o preço de contingência não tem prazo (P13).
+- O pedido guarda também `product_id`, `image_url` e a ordem dos itens, para a lista e o detalhe mostrarem a foto sem depender do catálogo atual.
+- O total tem `CHECK (total = subtotal + shipping_fee + gift_wrap_price)` no banco, além do cálculo no domínio (RN-051).
+- A configuração da embalagem nasce na própria migration (R$ 0), não no seed: produção também precisa da linha.
+- Sem seed de pedidos de exemplo: o seed de desenvolvimento não tem cliente, e um pedido feito pela loja cobre a demonstração.
+- Os dois jobs (48 h e 24 h) rodam juntos a cada 5 min, com `FOR UPDATE SKIP LOCKED`; o lembrete fica no máximo 5 min mais cedo que os 15 da spec.
+- O valor da embalagem é lido pela cliente em `GET /orders/settings` (com login) e editado em `/admin/ordering/settings`. A tela do painel fica para a Fase 5, junto com os pedidos.
+- `itemCount` da lista conta peças diferentes ("Anel Liso e mais 2"), não unidades.
+- `StockMovement` passou a aceitar autor nulo (sistema) e o id do pedido; o painel de estoque continua aceitando só entrada, saída e ajuste.
+
+| Item | Resultado |
+|------|-----------|
+| A1 | ✅ build com 0 avisos; `dotnet format` sem apontamentos além do CRLF |
+| A2 | ✅ lint, typecheck, 187 testes da loja, build de produção contra o stub (`/checkout`, `/conta/pedidos`, `/conta/pedidos/[id]`) |
+| Testes | ✅ domínio 186, aplicação 32, arquitetura 8, funcionais **259** (14 novos de checkout) |
+| B1 | ✅ `fase-4-2-schema.sql` aplicado pelo `psql`; o migrator do container vê o script como aplicado |
+| C2 | ✅ Na loja: sacola → checkout → endereço padrão → SEDEX → presente com embalagem e dedicatória → PED-000001, R$ 179,80 + R$ 35,96. Estoque 6 → 4 com movimentação `OrderPlaced`, sacola vazia, EM-04 no Mailpit |
+| C3 | ✅ por teste funcional: duas clientes, última unidade, um pedido só (201 e 409) |
+| C4 | ✅ dedicatória no pedido e no EM-04; valor da embalagem congelado (mudar depois não altera o pedido) |
+| C5 | ✅ por teste funcional: prazo vencido → cancelado pelo job com `PaymentTimeout`, estoque de volta, EM-10. Lembrete de 24 h uma vez só |
+| Cancelamento pela cliente | ✅ na loja: estoque de volta, histórico com as duas mudanças, botão some |
+| API em container | ✅ pedido 201 e a mesma `Idempotency-Key` → 200 com o mesmo pedido; e-mail com horário de Brasília (o tzdata da imagem *chiseled-extra* funciona) |
+| Celular | ✅ detalhe do pedido em 375 px sem rolagem lateral; ⏳ toque de verdade fica para o C13 |
+
+**Observação:** o log da API em container mostra `libgssapi_krb5.so.2: cannot open shared object file`. É o Npgsql procurando a biblioteca de Kerberos, que a imagem *chiseled* não tem; não usamos Kerberos e as conexões funcionam. Não é desta fatia.
+
+**Falta na 4.2:** aprovar o visual do checkout com a loja (uma versão, arquivo 26 §4.6). A tela de pagamento entra na 4.3; até lá, o pedido mostra o prazo e pede para falar com a MO.
