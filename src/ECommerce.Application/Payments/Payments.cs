@@ -58,6 +58,15 @@ public sealed record SyncPaymentMessage(string Provider, string ProviderPaymentI
     public const string Type = "payments.sync";
 }
 
+/// <summary>Mensagem do Outbox: estorno total de um pagamento aprovado (pedido pago cancelado, arquivo 21 §5.4).</summary>
+public sealed record RefundPaymentMessage(Guid PaymentId)
+{
+    public const string Type = "payments.refund";
+}
+
+/// <summary>Estorna um pagamento aprovado; falha passageira volta para o Outbox tentar de novo.</summary>
+public sealed record RefundPaymentCommand(Guid PaymentId) : ICommand;
+
 /// <summary>Mensagem do Outbox: cancela na plataforma o PIX pendente de um pedido cancelado.</summary>
 public sealed record CancelProviderPaymentMessage(string Provider, string ProviderPaymentId)
 {
@@ -164,7 +173,7 @@ internal sealed class PayOrderHandler(
 
         if (payment.Status == PaymentStatus.Approved)
         {
-            await PaymentOutcome.ApprovedAsync(payment, order, orders, payments, unitOfWork, outbox, now, cancellationToken);
+            await PaymentOutcome.ApprovedAsync(payment, order, orders, unitOfWork, outbox, now, cancellationToken);
         }
 
         return PaymentView.From(payment, order.Status, gateway.CanSimulate);
@@ -199,29 +208,27 @@ public sealed class PaymentOptions
     public int MaxInstallments { get; init; } = 1;
 }
 
-/// <summary>O que acontece quando a plataforma confirma um pagamento (RF-045, RN-101, RN-102).</summary>
+/// <summary>O que acontece quando a plataforma confirma um pagamento do pedido que espera por ele (RF-045).</summary>
 internal static class PaymentOutcome
 {
     public static async Task ApprovedAsync(
         Payment payment,
         Order order,
         IOrderRepository orders,
-        IPaymentRepository payments,
         IUnitOfWork unitOfWork,
         IOutbox outbox,
         DateTime nowUtc,
         CancellationToken cancellationToken)
     {
-        // RN-102 e RN-101: segundo pagamento aprovado, ou aprovado depois do cancelamento. O estorno automático chega
-        // na fatia 4.5; até lá a loja recebe o aviso e estorna pelo painel do Mercado Pago.
-        if (payment.Amount != order.Total || await payments.HasApprovedAsync(order.Id, payment.Id, cancellationToken) || order.Status != OrderStatus.PendingPayment)
+        // RN-100: o valor pago tem de ser o total. Diferente não confirma o pedido, e a loja confere à mão.
+        if (payment.Amount != order.Total)
         {
-            var reason = payment.Amount != order.Total
-                ? $"o valor pago ({MoneyFormat.Brl(payment.Amount)}) é diferente do total do pedido ({MoneyFormat.Brl(order.Total)})"
-                : order.Status == OrderStatus.Cancelled
-                    ? "o pedido já estava cancelado quando o pagamento foi aprovado"
-                    : "o pedido já tinha outro pagamento aprovado";
-            await OrderEmails.EnqueueStoreAlertAsync(unitOfWork, outbox, order, $"Pagamento {payment.ProviderPaymentId} precisa de estorno: {reason}.", cancellationToken);
+            await OrderEmails.EnqueueStoreAlertAsync(
+                unitOfWork,
+                outbox,
+                order,
+                $"O pagamento {payment.ProviderPaymentId} foi de {MoneyFormat.Brl(payment.Amount)}, diferente do total do pedido ({MoneyFormat.Brl(order.Total)}).",
+                cancellationToken);
             return;
         }
 
@@ -345,6 +352,16 @@ internal sealed class SyncPaymentHandler(
         }
 
         var now = time.GetUtcNow().UtcDateTime;
+
+        // RN-101 (pago depois do cancelamento) e RN-102 (segundo pagamento aprovado): estorna já, sem passar por
+        // "aprovado", que o índice de um aprovado por pedido não deixaria gravar.
+        if (snapshot.Value.Status == PaymentStatus.Approved && !snapshot.Value.Disputed && payment.Status == PaymentStatus.Pending
+            && (order.Status != OrderStatus.PendingPayment || await payments.HasApprovedAsync(order.Id, payment.Id, cancellationToken)))
+        {
+            payment.Apply(snapshot.Value with { Status = PaymentStatus.Pending }, now);
+            return await PaymentRefunds.RefundAsync(payment, order, gateway, payments, unitOfWork, outbox, now, cancellationToken);
+        }
+
         if (snapshot.Value.Disputed)
         {
             await OrderEmails.EnqueueStoreAlertAsync(
@@ -361,10 +378,71 @@ internal sealed class SyncPaymentHandler(
         await payments.UpdateAsync(payment, cancellationToken);
         if (payment.Status == PaymentStatus.Approved)
         {
-            await PaymentOutcome.ApprovedAsync(payment, order, orders, payments, unitOfWork, outbox, now, cancellationToken);
+            await PaymentOutcome.ApprovedAsync(payment, order, orders, unitOfWork, outbox, now, cancellationToken);
         }
 
         return Result.Success();
+    }
+}
+
+/// <summary>
+/// Estorno total (arquivo 21 §5.4). Aceito → <c>Refunded</c> e e-mail à cliente (EM-13). Recusado pela plataforma →
+/// <c>RefundFailed</c> e aviso à loja. Plataforma fora → falha, e quem chamou tenta de novo pelo Outbox.
+/// </summary>
+internal static class PaymentRefunds
+{
+    public static async Task<Result> RefundAsync(
+        Payment payment,
+        Order order,
+        IPaymentGateway gateway,
+        IPaymentRepository payments,
+        IUnitOfWork unitOfWork,
+        IOutbox outbox,
+        DateTime nowUtc,
+        CancellationToken cancellationToken)
+    {
+        var refund = await gateway.RefundAsync(payment.ProviderPaymentId!, payment.Id, cancellationToken);
+        if (refund.IsFailure && refund.Error == PaymentErrors.ProviderUnavailable)
+        {
+            return refund;
+        }
+
+        if (refund.IsSuccess)
+        {
+            payment.MarkRefunded(nowUtc);
+            await payments.UpdateAsync(payment, cancellationToken);
+            await OrderEmails.EnqueueAsync(unitOfWork, outbox, EmailTemplates.PaymentRefunded, order, cancellationToken, refund: true);
+            return Result.Success();
+        }
+
+        payment.MarkRefundFailed(nowUtc);
+        await payments.UpdateAsync(payment, cancellationToken);
+        await OrderEmails.EnqueueStoreAlertAsync(
+            unitOfWork, outbox, order, $"O Mercado Pago recusou o estorno do pagamento {payment.ProviderPaymentId}. Estorne pelo painel do Mercado Pago.", cancellationToken);
+        return Result.Success();
+    }
+}
+
+internal sealed class RefundPaymentHandler(
+    IUnitOfWork unitOfWork, IOrderRepository orders, IPaymentRepository payments, IPaymentGateway gateway, IOutbox outbox, TimeProvider time)
+    : ICommandHandler<RefundPaymentCommand>
+{
+    public async Task<Result> Handle(RefundPaymentCommand command, CancellationToken cancellationToken)
+    {
+        var payment = await payments.GetForUpdateAsync(command.PaymentId, cancellationToken);
+        if (payment is null || payment.Status != PaymentStatus.Approved || payment.ProviderPaymentId is null)
+        {
+            // Já estornado (mensagem repetida) ou nada a estornar.
+            return Result.Success();
+        }
+
+        var order = await orders.GetForUpdateAsync(payment.OrderId, null, cancellationToken);
+        if (order is null)
+        {
+            return Result.Failure(OrderErrors.OrderNotFound);
+        }
+
+        return await PaymentRefunds.RefundAsync(payment, order, gateway, payments, unitOfWork, outbox, time.GetUtcNow().UtcDateTime, cancellationToken);
     }
 }
 

@@ -36,7 +36,14 @@ internal static class OrderEmails
         EnqueueAsync(unitOfWork, outbox, EmailTemplates.PaymentNeedsAttention, order, cancellationToken, toStore: true, problem: problem);
 
     public static async Task EnqueueAsync(
-        IUnitOfWork unitOfWork, IOutbox outbox, string template, Order order, CancellationToken cancellationToken, bool toStore = false, string? problem = null)
+        IUnitOfWork unitOfWork,
+        IOutbox outbox,
+        string template,
+        Order order,
+        CancellationToken cancellationToken,
+        bool toStore = false,
+        string? problem = null,
+        bool refund = false)
     {
         var customer = await unitOfWork.Connection.QuerySingleAsync<CustomerRow>(new CommandDefinition(
             """
@@ -82,6 +89,7 @@ internal static class OrderEmails
             ["customerName"] = customer.FullName,
             ["customerEmail"] = customer.Email,
             ["problem"] = problem ?? string.Empty,
+            ["refund"] = refund ? "true" : "false",
         };
 
         await outbox.EnqueueAsync(

@@ -194,10 +194,13 @@ public sealed class Payment
         return true;
     }
 
-    /// <summary>Estorno que falhou na plataforma: fica para a loja tratar à mão (arquivo 21 §5.4).</summary>
+    /// <summary>
+    /// Estorno que a plataforma recusou: fica para a loja tratar à mão (arquivo 21 §5.4). Vale também para o pagamento
+    /// que a plataforma aprovou e nós ainda víamos como pendente (RN-101, RN-102).
+    /// </summary>
     public bool MarkRefundFailed(DateTime nowUtc)
     {
-        if (Status != PaymentStatus.Approved)
+        if (Status is not (PaymentStatus.Approved or PaymentStatus.Pending))
         {
             return false;
         }
@@ -207,10 +210,10 @@ public sealed class Payment
         return true;
     }
 
-    /// <summary>A plataforma confirmou o estorno.</summary>
+    /// <summary>A plataforma aceitou o estorno.</summary>
     public bool MarkRefunded(DateTime nowUtc)
     {
-        if (Status is not (PaymentStatus.Approved or PaymentStatus.RefundFailed))
+        if (Status is not (PaymentStatus.Approved or PaymentStatus.RefundFailed or PaymentStatus.Pending))
         {
             return false;
         }

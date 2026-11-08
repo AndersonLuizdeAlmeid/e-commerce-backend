@@ -1,6 +1,6 @@
 # Entrega — Fase 4: Checkout e pagamento
 
-**Status:** Planejada em 08/11/2026. **Fatias 4.1 (endereços), 4.2 (pedido) e 4.3 (PIX e webhook) implementadas e validadas com banco, API em container e as telas no navegador em 08/11/2026** (seção 8); a 4.3 com a plataforma falsa, **faltando o sandbox do Mercado Pago**, que depende das credenciais na VM. 4.4 e 4.5 não iniciadas.
+**Status:** Planejada em 08/11/2026. **Fatias 4.1 (endereços), 4.2 (pedido), 4.3 (PIX e webhook) e 4.5 (estornos) implementadas e validadas com banco, API em container e as telas no navegador em 08/11/2026** (seção 8); 4.3 e 4.5 com a plataforma falsa, **faltando o sandbox do Mercado Pago**, que depende das credenciais na VM. 4.4 (cartão) em andamento.
 **Repositórios:** `e-commerce-backend` e `e-commerce-frontend` (branch `feat/fase-4` nos dois).
 
 ## 1. Contexto
@@ -172,7 +172,7 @@ Primeiro só build (A), depois banco pelo DBeaver (B) e por último execução (
 | 4.2 — Pedido | Implementada e validada em 08/11/2026; falta aprovar o visual do checkout |
 | 4.3 — PIX e webhook | Implementada e validada com a plataforma falsa em 08/11/2026; falta o sandbox (credenciais e Funnel na VM) |
 | 4.4 — Cartão | Não iniciada |
-| 4.5 — Estornos | Não iniciada |
+| 4.5 — Estornos | Implementada e validada com a plataforma falsa em 08/11/2026; falta o estorno no sandbox (C11) |
 
 ### 4.1 — Validação (08/11/2026)
 
@@ -248,3 +248,19 @@ Primeiro só build (A), depois banco pelo DBeaver (B) e por último execução (
 | API em container | ✅ PIX gerado e webhook sem assinatura com 401 |
 
 **Para fechar a 4.3:** credenciais de teste e assinatura secreta no `/opt/mo/.env`, Funnel ligado, URL cadastrada no Mercado Pago (roteiro no `deploy/dev/README.md`). Depois, conferir C7 e C9 e gravar respostas reais do sandbox nos testes do adaptador.
+
+### 4.5 — Validação (08/11/2026)
+
+**Como ficou:**
+- A cliente cancela o pedido pago (RF-043 CA1); em separação, só a loja (Fase 5). O estoque volta na hora e o estorno vai para o Outbox (`payments.refund`), que tenta de novo se a plataforma estiver fora.
+- **RN-101 e RN-102 agora estornam sozinhos** (na 4.3 só avisavam): a sincronização estorna direto, sem gravar o pagamento como "aprovado", porque o índice de um aprovado por pedido não deixaria. Valor pago diferente do total continua só avisando a loja.
+- Estorno aceito → pagamento `Refunded` e EM-13 para a cliente ("Estorno do pedido…"). Recusado pela plataforma → `RefundFailed` e EM-12 para a loja estornar pelo painel do Mercado Pago. O EM-10 do pedido pago cancelado avisa que o valor será estornado.
+- **Limite conhecido:** se a plataforma ficar fora durante todas as tentativas do Outbox (5, com espera crescente), a mensagem fica com `failed_at` e o pagamento continua `Approved`, sem aviso por e-mail. A lista de estornos pendentes do painel (Fase 5) e o alerta de `failed_at` (Fase 6) cobrem esse caso.
+
+| Item | Resultado |
+|------|-----------|
+| A1 | ✅ build com 0 avisos; `dotnet format` sem apontamentos além do CRLF |
+| A2 | ✅ lint, typecheck, 187 testes da loja, build de produção contra o stub |
+| Testes | ✅ domínio 191, aplicação 32, arquitetura 8, funcionais **287** (5 novos de estorno: pedido pago cancelado, RN-101, RN-102, estorno recusado, plataforma fora e nova tentativa) |
+| C11 | ✅ com a plataforma falsa, na API em container: cartão aprovado → cancelamento → pagamento `Refunded`, EM-10 e EM-13 no Mailpit. ⏳ falta no sandbox |
+| C12 | ✅ por teste funcional: aprovação depois do cancelamento → estorno, pedido continua cancelado |

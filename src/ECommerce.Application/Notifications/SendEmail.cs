@@ -12,6 +12,9 @@ public static class EmailTemplates
     public const string NewPaidOrder = "EM-07";
     public const string OrderCancelled = "EM-10";
 
+    /// <summary>Estorno feito (RN-101, RN-102 e cancelamento de pedido pago).</summary>
+    public const string PaymentRefunded = "EM-13";
+
     /// <summary>Aviso à loja de pagamento que precisa de atenção (estorno, contestação).</summary>
     public const string PaymentNeedsAttention = "EM-12";
 }

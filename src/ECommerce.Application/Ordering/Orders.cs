@@ -227,7 +227,7 @@ internal sealed class GetMyOrderHandler(IDbConnectionFactory connectionFactory) 
             new OrderGiftResponse(order.IsGift, order.GiftWrap, order.GiftMessage, order.GiftWrapPrice),
             order.Notes,
             history,
-            CanCancel: order.Status == nameof(OrderStatus.PendingPayment));
+            CanCancel: order.Status is nameof(OrderStatus.PendingPayment) or nameof(OrderStatus.PaymentConfirmed));
     }
 
     private sealed class OrderRow
@@ -295,6 +295,7 @@ internal static class OrderCancellation
         DateTime nowUtc,
         CancellationToken cancellationToken)
     {
+        var wasPaid = order.Status == OrderStatus.PaymentConfirmed;
         var cancelled = order.Cancel(reason, by, nowUtc);
         if (cancelled.IsFailure)
         {
@@ -342,7 +343,21 @@ internal static class OrderCancellation
                 Payments.CancelProviderPaymentMessage.Type, new Payments.CancelProviderPaymentMessage(provider, providerPaymentId), cancellationToken);
         }
 
-        await OrderEmails.EnqueueAsync(unitOfWork, outbox, EmailTemplates.OrderCancelled, order, cancellationToken);
+        // Pago: estorno total pelo Outbox, que tenta de novo se a plataforma estiver fora (arquivo 21 §5.4).
+        if (wasPaid)
+        {
+            var approved = await unitOfWork.Connection.QueryAsync<Guid>(new CommandDefinition(
+                "SELECT id FROM payments.payments WHERE order_id = @Id AND status = 'Approved'",
+                new { order.Id },
+                unitOfWork.Transaction,
+                cancellationToken: cancellationToken));
+            foreach (var paymentId in approved)
+            {
+                await outbox.EnqueueAsync(Payments.RefundPaymentMessage.Type, new Payments.RefundPaymentMessage(paymentId), cancellationToken);
+            }
+        }
+
+        await OrderEmails.EnqueueAsync(unitOfWork, outbox, EmailTemplates.OrderCancelled, order, cancellationToken, refund: wasPaid);
         return Result.Success();
     }
 }
@@ -359,8 +374,8 @@ internal sealed class CancelMyOrderHandler(
             return Result.Failure(OrderErrors.OrderNotFound);
         }
 
-        // Pedido pago precisa de estorno, que chega na fatia 4.5 (entrega 4 §3, P14).
-        if (order.Status != OrderStatus.PendingPayment)
+        // RF-043 CA1: aguardando pagamento ou pago. Pago gera estorno total (arquivo 21 §5.4); em separação, só a loja cancela.
+        if (order.Status is not (OrderStatus.PendingPayment or OrderStatus.PaymentConfirmed))
         {
             return Result.Failure(OrderErrors.CannotCancel);
         }

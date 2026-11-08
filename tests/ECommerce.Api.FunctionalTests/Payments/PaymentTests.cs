@@ -86,7 +86,7 @@ public sealed class PaymentTests(ApiFactory factory) : ShopperTest(factory)
 
         (await PayAsync(customer, order)).StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
         var detail = await JsonAsync(await customer.GetAsync($"/api/v1/orders/{order}"));
-        detail.GetProperty("canCancel").GetBoolean().ShouldBeFalse();
+        detail.GetProperty("canCancel").GetBoolean().ShouldBeTrue(); // RF-043 CA1: pago ainda pode cancelar, com estorno
     }
 
     [Fact, Trait("Spec", "RF-045")]
@@ -177,24 +177,126 @@ public sealed class PaymentTests(ApiFactory factory) : ShopperTest(factory)
         (await ScalarAsync<long>("SELECT count(*) FROM payments.payments", new { })).ShouldBe(0);
     }
 
+    private async Task SyncAsync(string providerId)
+    {
+        await using var scope = Factory.Services.CreateAsyncScope();
+        var sync = scope.ServiceProvider.GetRequiredService<ICommandHandler<SyncPaymentCommand>>();
+        (await sync.Handle(new SyncPaymentCommand(PaymentSettings.FakeProvider, providerId), CancellationToken)).IsSuccess.ShouldBeTrue();
+    }
+
+    private Task<string> ProviderIdAsync(Guid order, string status = "Pending") =>
+        ScalarAsync<string>(
+            "SELECT provider_payment_id FROM payments.payments WHERE order_id = @Id AND status = @Status ORDER BY created_at LIMIT 1",
+            new { Id = order, Status = status });
+
+    private async Task<string> WaitForPaymentStatusAsync(string providerId, string expected)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        string status;
+        do
+        {
+            status = await ScalarAsync<string>("SELECT status FROM payments.payments WHERE provider_payment_id = @Id", new { Id = providerId });
+            if (status == expected)
+            {
+                return status;
+            }
+
+            await Task.Delay(100, CancellationToken);
+        }
+        while (DateTime.UtcNow < deadline);
+
+        return status;
+    }
+
+    private static object ApprovedCard() => new { method = "CreditCard", cardToken = FakePaymentGateway.ApprovedCardToken, paymentMethodId = "visa" };
+
     [Fact, Trait("Spec", "RN-101")]
-    public async Task ApprovalAfterCancellation_KeepsTheOrderCancelled_AndAlertsTheStore()
+    public async Task ApprovalAfterCancellation_IsRefunded_AndTheOrderStaysCancelled()
     {
         var (customer, order, _) = await PlacedOrderAsync("tarde@loja.teste");
         using var shopper = customer;
         await PayAsync(customer, order);
-        var providerId = await ScalarAsync<string>("SELECT provider_payment_id FROM payments.payments WHERE order_id = @Id", new { Id = order });
+        var providerId = await ProviderIdAsync(order);
         (await customer.PostAsync($"/api/v1/orders/{order}/cancel", null)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
 
         await Factory.Payments.SimulateApprovalAsync(providerId, CancellationToken);
-        await using (var scope = Factory.Services.CreateAsyncScope())
-        {
-            var sync = scope.ServiceProvider.GetRequiredService<ICommandHandler<SyncPaymentCommand>>();
-            (await sync.Handle(new SyncPaymentCommand(PaymentSettings.FakeProvider, providerId), CancellationToken)).IsSuccess.ShouldBeTrue();
-        }
+        await SyncAsync(providerId);
 
         (await OrderStatusAsync(customer, order)).ShouldBe("Cancelled");
-        (await Factory.Emails.WaitForAsync(ApiFactory.StoreEmail, "Atenção")).TextBody.ShouldContain("já estava cancelado");
+        (await WaitForPaymentStatusAsync(providerId, "Refunded")).ShouldBe("Refunded");
+        Factory.Payments.Refunded.ShouldContain(providerId);
+        await Factory.Emails.WaitForAsync("tarde@loja.teste", "Estorno do pedido");
+    }
+
+    [Fact, Trait("Spec", "RF-043-CA2")]
+    public async Task CancellingAPaidOrder_RefundsThePayment_AndReturnsTheStock()
+    {
+        var (customer, order, ring) = await PlacedOrderAsync("pagoecancelado@loja.teste", stock: 1);
+        using var shopper = customer;
+        (await JsonAsync(await PayAsync(customer, order, ApprovedCard()))).GetProperty("status").GetString().ShouldBe("Approved");
+        var providerId = await ProviderIdAsync(order, "Approved");
+        (await JsonAsync(await customer.GetAsync($"/api/v1/orders/{order}"))).GetProperty("canCancel").GetBoolean().ShouldBeTrue();
+
+        (await customer.PostAsync($"/api/v1/orders/{order}/cancel", null)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+
+        (await StockAsync(ring)).ShouldBe(1);
+        (await WaitForPaymentStatusAsync(providerId, "Refunded")).ShouldBe("Refunded");
+        (await Factory.Emails.WaitForAsync("pagoecancelado@loja.teste", "cancelado")).TextBody.ShouldContain("será estornado");
+        await Factory.Emails.WaitForAsync("pagoecancelado@loja.teste", "Estorno do pedido");
+    }
+
+    [Fact, Trait("Spec", "RN-102")]
+    public async Task SecondApprovedPayment_IsRefunded()
+    {
+        var (customer, order, _) = await PlacedOrderAsync("dois@loja.teste");
+        using var shopper = customer;
+        await PayAsync(customer, order);
+        var pix = await ProviderIdAsync(order);
+        (await JsonAsync(await PayAsync(customer, order, ApprovedCard()))).GetProperty("status").GetString().ShouldBe("Approved");
+
+        await Factory.Payments.SimulateApprovalAsync(pix, CancellationToken);
+        await SyncAsync(pix);
+
+        (await WaitForPaymentStatusAsync(pix, "Refunded")).ShouldBe("Refunded");
+        (await OrderStatusAsync(customer, order)).ShouldBe("PaymentConfirmed");
+        (await ScalarAsync<long>("SELECT count(*) FROM payments.payments WHERE order_id = @Id AND status = 'Approved'", new { Id = order })).ShouldBe(1);
+    }
+
+    [Fact, Trait("Spec", "21-§5.4")]
+    public async Task RefundRefusedByTheProvider_IsMarkedAndTheStoreIsAlerted()
+    {
+        var (customer, order, _) = await PlacedOrderAsync("recusaestorno@loja.teste");
+        using var shopper = customer;
+        await PayAsync(customer, order, ApprovedCard());
+        var providerId = await ProviderIdAsync(order, "Approved");
+        Factory.Payments.RejectRefunds = true;
+
+        (await customer.PostAsync($"/api/v1/orders/{order}/cancel", null)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+
+        (await WaitForPaymentStatusAsync(providerId, "RefundFailed")).ShouldBe("RefundFailed");
+        (await Factory.Emails.WaitForAsync(ApiFactory.StoreEmail, "Atenção")).TextBody.ShouldContain("recusou o estorno");
+    }
+
+    [Fact, Trait("Spec", "21-§5.4")]
+    public async Task RefundWithTheProviderDown_IsRetried()
+    {
+        var (customer, order, _) = await PlacedOrderAsync("tentadenovo@loja.teste");
+        using var shopper = customer;
+        await PayAsync(customer, order, ApprovedCard());
+        var providerId = await ProviderIdAsync(order, "Approved");
+
+        await using (var scope = Factory.Services.CreateAsyncScope())
+        {
+            Factory.Payments.FailNext = 1;
+            var refund = scope.ServiceProvider.GetRequiredService<ICommandHandler<RefundPaymentCommand>>();
+            var paymentId = await ScalarAsync<Guid>("SELECT id FROM payments.payments WHERE provider_payment_id = @Id", new { Id = providerId });
+            (await refund.Handle(new RefundPaymentCommand(paymentId), CancellationToken)).IsFailure.ShouldBeTrue();
+            (await ScalarAsync<string>("SELECT status FROM payments.payments WHERE id = @Id", new { Id = paymentId })).ShouldBe("Approved");
+            (await refund.Handle(new RefundPaymentCommand(paymentId), CancellationToken)).IsSuccess.ShouldBeTrue();
+            (await refund.Handle(new RefundPaymentCommand(paymentId), CancellationToken)).IsSuccess.ShouldBeTrue();
+        }
+
+        (await ScalarAsync<string>("SELECT status FROM payments.payments WHERE provider_payment_id = @Id", new { Id = providerId })).ShouldBe("Refunded");
     }
 
     [Fact, Trait("Spec", "25-§2")]

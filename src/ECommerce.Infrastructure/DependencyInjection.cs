@@ -147,6 +147,7 @@ public static class DependencyInjection
         services.AddScoped<IOutboxMessageHandler, SendEmailHandler>();
         services.AddScoped<IOutboxMessageHandler, Payments.SyncPaymentHandler>();
         services.AddScoped<IOutboxMessageHandler, CancelProviderPaymentHandler>();
+        services.AddScoped<IOutboxMessageHandler, RefundPaymentMessageHandler>();
         services.AddHostedService<OutboxProcessor>();
         services.AddHostedService<MaintenanceJob>();
         services.AddHostedService<OrderJobs>();

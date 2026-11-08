@@ -29,6 +29,9 @@ public sealed class FakePaymentGateway : IPaymentGateway
     /// <summary>Faz a próxima chamada responder "plataforma fora" (testes).</summary>
     public int FailNext { get; set; }
 
+    /// <summary>A plataforma recusa os estornos (testes do <c>RefundFailed</c>).</summary>
+    public bool RejectRefunds { get; set; }
+
     public IReadOnlyCollection<string> Refunded => _refunded.Keys.ToList();
 
     private readonly ConcurrentDictionary<string, bool> _refunded = new();
@@ -99,6 +102,11 @@ public sealed class FakePaymentGateway : IPaymentGateway
             return Task.FromResult(Result.Failure(failure));
         }
 
+        if (RejectRefunds)
+        {
+            return Task.FromResult(Result.Failure(PaymentErrors.ProviderRejected));
+        }
+
         if (_payments.TryGetValue(providerPaymentId, out var snapshot))
         {
             _payments[providerPaymentId] = snapshot with { Status = PaymentStatus.Refunded };
@@ -125,6 +133,7 @@ public sealed class FakePaymentGateway : IPaymentGateway
         _byIdempotencyKey.Clear();
         _refunded.Clear();
         FailNext = 0;
+        RejectRefunds = false;
     }
 
     private bool TryFail(out Error error)

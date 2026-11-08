@@ -27,6 +27,23 @@ internal sealed class SyncPaymentHandler(ICommandHandler<SyncPaymentCommand> syn
     }
 }
 
+/// <summary><see cref="RefundPaymentMessage"/>: estorno do pedido pago cancelado; plataforma fora → o Outbox tenta de novo.</summary>
+internal sealed class RefundPaymentMessageHandler(ICommandHandler<RefundPaymentCommand> refund) : IOutboxMessageHandler
+{
+    public string Type => RefundPaymentMessage.Type;
+
+    public async Task HandleAsync(string payloadJson, CancellationToken cancellationToken)
+    {
+        var message = JsonSerializer.Deserialize<RefundPaymentMessage>(payloadJson, OutboxWriter.SerializerOptions)
+            ?? throw new InvalidOperationException("Payload de estorno vazio.");
+        var result = await refund.Handle(new RefundPaymentCommand(message.PaymentId), cancellationToken);
+        if (result.IsFailure)
+        {
+            throw new InvalidOperationException($"Estorno do pagamento {message.PaymentId} falhou: {result.Error.Code}");
+        }
+    }
+}
+
 /// <summary><see cref="CancelProviderPaymentMessage"/>: cancela o PIX de um pedido cancelado. É cortesia: se falhar, o PIX vence sozinho.</summary>
 internal sealed partial class CancelProviderPaymentHandler(IPaymentGateway gateway, ILogger<CancelProviderPaymentHandler> logger) : IOutboxMessageHandler
 {

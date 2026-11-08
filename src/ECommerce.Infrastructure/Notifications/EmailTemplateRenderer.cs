@@ -86,10 +86,18 @@ internal sealed class EmailTemplateRenderer(IOptions<EmailSettings> options)
                 "Aviso automático da loja.",
                 adminLink: true),
 
+            EmailTemplates.PaymentRefunded => BuildOrder(
+                email,
+                $"Estorno do pedido {Value(email.Model, "orderNumber")}",
+                $"Olá, {name}! Estornamos o valor de {Value(email.Model, "total")} do pedido {Value(email.Model, "orderNumber")}. O prazo para o dinheiro aparecer depende do seu banco ou da administradora do cartão.",
+                "Ver pedido",
+                "Qualquer dúvida, fale com a MO."),
+
             EmailTemplates.OrderCancelled => BuildOrder(
                 email,
                 $"Pedido {Value(email.Model, "orderNumber")} cancelado",
-                $"Olá, {name}! Seu pedido foi cancelado {Value(email.Model, "cancellationReason")}. As peças voltaram para a loja.",
+                $"Olá, {name}! Seu pedido foi cancelado {Value(email.Model, "cancellationReason")}. As peças voltaram para a loja." +
+                (Value(email.Model, "refund") == "true" ? " O valor pago será estornado; avisamos por e-mail quando o estorno sair." : string.Empty),
                 "Ver pedido",
                 "Se quiser as peças, é só fazer um novo pedido. Qualquer dúvida, fale com a MO."),
 
