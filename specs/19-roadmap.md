@@ -42,6 +42,13 @@ Entregas incrementais em **fatias verticais**: cada fase vai do banco à tela e 
 - **Integração Correios** (ou agregador), regras de frete, simulador por CEP (RF-032, RF-058).
 - Frontend: carrinho com frete; admin de estoque e regras de frete.
 
+## Infra 1 — Ambiente de dev na VM ✅ (07/11/2026)
+> Plano, decisões e validação: [entregas/infra-1-ambiente-dev.md](entregas/infra-1-ambiente-dev.md). Operação: `deploy/dev/README.md`.
+- Push na `main` de cada repositório → testes → imagens no GHCR (Trivy, SBOM) → deploy automático na VM, com volta sozinha se a versão nova não ficar saudável.
+- VM compartilhada endurecida (SSH, fail2ban, firewall, atualizações automáticas); loja, API e Mailpit só pela rede privada do Tailscale, com HTTPS.
+- Backup diário do banco e restauração com um comando.
+- *Fica para depois do domínio:* staging e produção em VM própria, Cloudflare, R2, Resend e alertas.
+
 ## Fase 4 — Checkout e pagamento
 - Endereços (RF-007), checkout transacional (RF-040), **pagamento integrado PIX/cartão + webhook** (RF-044/045), cancelamento com estorno (RF-043).
 - **Cancelamento automático em 48 h** e lembrete de 24 h (RF-046).
