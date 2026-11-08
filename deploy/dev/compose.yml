@@ -101,6 +101,10 @@ services:
       Email__FrontendBaseUrl: ${STORE_URL:?}
       Email__Smtp__Host: mailpit
       Email__Smtp__Port: "1025"
+      # Pagamento: falso até as credenciais de teste do Mercado Pago entrarem no .env (entrega 4 §6).
+      Payments__Provider: ${PAYMENTS_PROVIDER:-Fake}
+      Payments__MercadoPago__AccessToken: ${MERCADOPAGO_ACCESS_TOKEN:-}
+      Payments__MercadoPago__WebhookSecret: ${MERCADOPAGO_WEBHOOK_SECRET:-}
       ImageStorage__ServiceUrl: http://rustfs:9000
       ImageStorage__AccessKey: ${RUSTFS_ACCESS_KEY:?}
       ImageStorage__SecretKey: ${RUSTFS_SECRET_KEY:?}
@@ -124,6 +128,8 @@ services:
     cap_drop: [ALL]
     environment:
       API_INTERNAL_URL: http://api:8080
+      # Chave pública do Mercado Pago (TEST-...), lida a cada requisição: sem ela, o cartão fica indisponível (entrega 4 §3, P9).
+      MERCADOPAGO_PUBLIC_KEY: ${MERCADOPAGO_PUBLIC_KEY:-}
       API_INTERNAL_KEY: ${INTERNAL_KEY:?}
       REVALIDATE_SECRET: ${REVALIDATE_SECRET:?}
     ports: ["127.0.0.1:3100:3000"]

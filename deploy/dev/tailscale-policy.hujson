@@ -15,6 +15,12 @@
     // A VM não inicia conexão com nenhum aparelho da rede: não há regra com tag:mo-dev na origem.
   ],
 
+  // Funnel só para a VM (entrega 4 §3, P2): o Mercado Pago precisa alcançar o webhook pela internet. O caminho
+  // publicado é escolhido no comando "tailscale funnel" da VM; loja, painel e Mailpit continuam só na rede privada.
+  "nodeAttrs": [
+    { "target": ["tag:mo-dev"], "attr": ["funnel"] },
+  ],
+
   // Tailscale SSH desligado: o acesso continua pelo OpenSSH, com chave.
   "ssh": [],
 }

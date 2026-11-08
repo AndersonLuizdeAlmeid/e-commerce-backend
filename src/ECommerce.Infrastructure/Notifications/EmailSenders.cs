@@ -27,6 +27,9 @@ public sealed class EmailSettings
     public string FromName { get; init; } = "Loja";
     public string? ReplyTo { get; init; }
 
+    /// <summary>E-mail da loja para os avisos de pedido pago e de pagamento com problema (entrega 4 §3, P12).</summary>
+    public string StoreAddress { get; init; } = string.Empty;
+
     /// <summary>Base dos links dos e-mails (confirmar e-mail, redefinir senha).</summary>
     public string FrontendBaseUrl { get; init; } = "http://localhost:3000";
 

@@ -112,3 +112,15 @@ gen database/fase-3-3-dados-exemplo.sql seedversions "$P.Seeds.Development" \
 gen database/fase-3-4-schema.sql schemaversions "$P.Migrations" \
   "Fase 3.4 — regras de frete" "$P.Migrations.V0015__shipping_settings.sql" \
   $M/V0016__shipping_rules.sql
+
+gen database/fase-4-1-schema.sql schemaversions "$P.Migrations" \
+  "Fase 4.1 — endereços do cliente" "$P.Migrations.V0016__shipping_rules.sql" \
+  $M/V0017__customer_addresses.sql
+
+gen database/fase-4-2-schema.sql schemaversions "$P.Migrations" \
+  "Fase 4.2 — pedidos, itens, histórico e valor da embalagem" "$P.Migrations.V0017__customer_addresses.sql" \
+  $M/V0018__ordering.sql
+
+gen database/fase-4-3-schema.sql schemaversions "$P.Migrations" \
+  "Fase 4.3 — pagamentos e notificações da plataforma" "$P.Migrations.V0018__ordering.sql" \
+  $M/V0019__payments.sql

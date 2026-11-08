@@ -50,6 +50,7 @@ Entregas incrementais em **fatias verticais**: cada fase vai do banco à tela e 
 - *Fica para depois do domínio:* staging e produção em VM própria, Cloudflare, R2, Resend e alertas.
 
 ## Fase 4 — Checkout e pagamento
+> 🔎 **Implementada em 08/11/2026** nas cinco fatias (endereços, pedido, PIX e webhook, cartão, estornos), validada com a plataforma falsa; falta o sandbox do Mercado Pago na VM e aprovar o visual: [entregas/fase-4-checkout-e-pagamento.md](entregas/fase-4-checkout-e-pagamento.md).
 - Endereços (RF-007), checkout transacional (RF-040), **pagamento integrado PIX/cartão + webhook** (RF-044/045), cancelamento com estorno (RF-043).
 - **Cancelamento automático em 48 h** e lembrete de 24 h (RF-046).
 - E-mails de pedido (EM-04..EM-10).
