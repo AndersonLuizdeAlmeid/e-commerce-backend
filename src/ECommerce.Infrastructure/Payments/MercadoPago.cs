@@ -266,18 +266,27 @@ internal sealed partial class MercadoPagoGateway(HttpClient http, IOptions<Payme
 }
 
 /// <summary>
-/// Confere a notificação do Mercado Pago (entrega 4 §3, P7): HMAC-SHA256 de
+/// Confere a notificação do Mercado Pago (entrega 4 §3, P7): HMAC-SHA256 do modelo
 /// <c>id:{data.id};request-id:{x-request-id};ts:{ts};</c> com a assinatura secreta, comparado em tempo constante.
-/// Não há janela de tempo: a reentrega legítima chega horas depois, e reenviar uma notificação capturada não faz mal,
-/// porque o evento é deduplicado e o pagamento é sempre consultado na plataforma.
+/// Como manda a documentação, a parte que não vem na notificação sai do modelo; o <c>data.id</c> vem da URL e, na falta
+/// dele, do corpo. Não há janela de tempo: a reentrega legítima chega horas depois, e reenviar uma notificação capturada
+/// não faz mal, porque o evento é deduplicado e o pagamento é sempre consultado na plataforma.
 /// </summary>
-internal sealed class MercadoPagoWebhookVerifier(IOptions<PaymentSettings> options) : IPaymentWebhookVerifier
+internal sealed partial class MercadoPagoWebhookVerifier(IOptions<PaymentSettings> options, ILogger<MercadoPagoWebhookVerifier> logger)
+    : IPaymentWebhookVerifier
 {
     public PaymentWebhookCheck Verify(IReadOnlyDictionary<string, string> headers, IReadOnlyDictionary<string, string> query, string body)
     {
         var secret = options.Value.MercadoPago.WebhookSecret;
-        if (string.IsNullOrEmpty(secret) || !headers.TryGetValue("x-signature", out var signature))
+        if (string.IsNullOrEmpty(secret))
         {
+            LogRejected(logger, "Payments:MercadoPago:WebhookSecret não configurado");
+            return PaymentWebhookCheck.Invalid;
+        }
+
+        if (!headers.TryGetValue("x-signature", out var signature))
+        {
+            LogRejected(logger, "sem cabeçalho x-signature");
             return PaymentWebhookCheck.Invalid;
         }
 
@@ -296,67 +305,116 @@ internal sealed class MercadoPagoWebhookVerifier(IOptions<PaymentSettings> optio
             }
         }
 
-        string? type = null;
-        string? dataId = query.GetValueOrDefault("data.id");
+        string? type = query.GetValueOrDefault("type") ?? query.GetValueOrDefault("topic");
+        string? bodyDataId = null;
         string? eventId = null;
         try
         {
             using var document = JsonDocument.Parse(string.IsNullOrWhiteSpace(body) ? "{}" : body);
             var root = document.RootElement;
-            type = root.TryGetProperty("type", out var t) ? t.GetString() : query.GetValueOrDefault("type");
-            if (dataId is null && root.TryGetProperty("data", out var data) && data.TryGetProperty("id", out var id))
+            if (root.ValueKind == JsonValueKind.Object)
             {
-                dataId = id.ToString();
-            }
+                if (root.TryGetProperty("type", out var t) && t.ValueKind == JsonValueKind.String)
+                {
+                    type = t.GetString();
+                }
 
-            eventId = root.TryGetProperty("id", out var notification) ? notification.ToString() : null;
+                if (root.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object && data.TryGetProperty("id", out var id))
+                {
+                    bodyDataId = id.ToString();
+                }
+
+                eventId = root.TryGetProperty("id", out var notification) ? notification.ToString() : null;
+            }
         }
         catch (JsonException)
         {
+            LogRejected(logger, "corpo que não é JSON");
             return PaymentWebhookCheck.Invalid;
         }
 
-        if (ts is null || v1 is null || dataId is null)
+        var queryDataId = query.GetValueOrDefault("data.id") ?? query.GetValueOrDefault("id");
+        var requestId = headers.GetValueOrDefault("x-request-id");
+
+        byte[]? received = null;
+        if (v1 is not null)
         {
+            try
+            {
+                received = Convert.FromHexString(v1);
+            }
+            catch (FormatException)
+            {
+                received = null;
+            }
+        }
+
+        if (ts is null || received is null)
+        {
+            LogRejected(logger, "x-signature sem ts ou v1 válidos");
             return PaymentWebhookCheck.Invalid;
         }
 
-        var requestId = headers.GetValueOrDefault("x-request-id") ?? string.Empty;
-        var expected = MercadoPagoSignature.Hash(secret, dataId, requestId, ts);
-
-        byte[] received;
-        try
+        // O id da URL é o oficial; o do corpo cobre proxy que perca a query. Sem id nenhum, o modelo fica sem a parte.
+        string?[] ids = queryDataId is null && bodyDataId is null ? [null] : new[] { queryDataId, bodyDataId }.Where(id => id is not null).Distinct().ToArray();
+        foreach (var id in ids)
         {
-            received = Convert.FromHexString(v1);
-        }
-        catch (FormatException)
-        {
-            return PaymentWebhookCheck.Invalid;
-        }
-
-        if (!CryptographicOperations.FixedTimeEquals(expected, received))
-        {
-            return PaymentWebhookCheck.Invalid;
+            if (CryptographicOperations.FixedTimeEquals(MercadoPagoSignature.Hash(secret, id, requestId, ts), received))
+            {
+                var dataId = id ?? string.Empty;
+                return type is "payment" or null && dataId.Length > 0
+                    ? new PaymentWebhookCheck(true, new PaymentNotification(eventId ?? $"{dataId}:{requestId}", dataId))
+                    : PaymentWebhookCheck.Ignored;
+            }
         }
 
-        return type is "payment" or null
-            ? new PaymentWebhookCheck(true, new PaymentNotification(eventId ?? $"{dataId}:{requestId}", dataId))
-            : PaymentWebhookCheck.Ignored;
+        // Nada aqui é segredo: ajuda a ver o que a plataforma mandou quando a assinatura não confere.
+        LogMismatch(
+            logger,
+            ts,
+            requestId is not null,
+            queryDataId ?? "(nenhum)",
+            bodyDataId ?? "(nenhum)",
+            type ?? "(nenhum)",
+            string.Join(",", query.Keys));
+        return PaymentWebhookCheck.Invalid;
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Webhook do Mercado Pago recusado: {Reason}")]
+    private static partial void LogRejected(ILogger logger, string reason);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Assinatura do webhook não confere: ts={Ts}, x-request-id presente={HasRequestId}, data.id na URL={QueryDataId}, data.id no corpo={BodyDataId}, type={Type}, parâmetros da URL={QueryKeys}")]
+    private static partial void LogMismatch(
+        ILogger logger, string ts, bool hasRequestId, string queryDataId, string bodyDataId, string type, string queryKeys);
 }
 
 /// <summary>A assinatura das notificações do Mercado Pago (entrega 4 §3, P7), montada como a plataforma faz.</summary>
 public static class MercadoPagoSignature
 {
-    /// <summary>HMAC-SHA256 de <c>id:{data.id};request-id:{x-request-id};ts:{ts};</c>; id alfanumérico vai em minúsculas.</summary>
-    public static byte[] Hash(string secret, string dataId, string requestId, string ts)
+    /// <summary>
+    /// HMAC-SHA256 de <c>id:{data.id};request-id:{x-request-id};ts:{ts};</c>. O id alfanumérico vai em minúsculas, e a
+    /// parte que não veio na notificação sai do modelo.
+    /// </summary>
+    public static byte[] Hash(string secret, string? dataId, string? requestId, string ts)
     {
-        var manifestId = dataId.All(char.IsAsciiLetterOrDigit) ? dataId.ToLowerInvariant() : dataId;
-        var manifest = $"id:{manifestId};request-id:{requestId};ts:{ts};";
-        return HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes(manifest));
+        var manifest = new StringBuilder();
+        if (!string.IsNullOrEmpty(dataId))
+        {
+            manifest.Append("id:").Append(dataId.All(char.IsAsciiLetterOrDigit) ? dataId.ToLowerInvariant() : dataId).Append(';');
+        }
+
+        if (!string.IsNullOrEmpty(requestId))
+        {
+            manifest.Append("request-id:").Append(requestId).Append(';');
+        }
+
+        manifest.Append("ts:").Append(ts).Append(';');
+        return HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes(manifest.ToString()));
     }
 
     /// <summary>Valor do cabeçalho <c>x-signature</c>: <c>ts=...,v1=...</c>.</summary>
-    public static string Header(string secret, string dataId, string requestId, string ts) =>
+    public static string Header(string secret, string? dataId, string? requestId, string ts) =>
         $"ts={ts},v1={Convert.ToHexStringLower(Hash(secret, dataId, requestId, ts))}";
 }

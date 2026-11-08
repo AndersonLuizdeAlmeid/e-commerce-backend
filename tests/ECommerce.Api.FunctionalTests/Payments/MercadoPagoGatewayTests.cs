@@ -195,6 +195,30 @@ public sealed class MercadoPagoGatewayTests : IDisposable
         Verifier.Verify(new Dictionary<string, string>(), query, body).SignatureValid.ShouldBeFalse();
     }
 
+    [Fact, Trait("Spec", "RF-045")]
+    public void Webhook_WithoutRequestId_IsSignedWithoutThatPart()
+    {
+        var check = Verifier.Verify(
+            new Dictionary<string, string> { ["x-signature"] = MercadoPagoSignature.Header(Secret, "123456", null, "1794141954") },
+            new Dictionary<string, string> { ["data.id"] = "123456", ["type"] = "payment" },
+            """{"id":1,"type":"payment","data":{"id":"123456"}}""");
+
+        check.SignatureValid.ShouldBeTrue();
+        check.Notification!.ProviderPaymentId.ShouldBe("123456");
+    }
+
+    [Fact, Trait("Spec", "RF-045")]
+    public void Webhook_WithTheIdOnlyInTheBody_IsAccepted()
+    {
+        var check = Verifier.Verify(
+            Headers(MercadoPagoSignature.Header(Secret, "777", "req-9", "1794141954"), "req-9"),
+            new Dictionary<string, string>(),
+            """{"id":2,"type":"payment","data":{"id":"777"}}""");
+
+        check.SignatureValid.ShouldBeTrue();
+        check.Notification!.ProviderPaymentId.ShouldBe("777");
+    }
+
     [Fact]
     public void Webhook_AboutSomethingElse_IsIgnored()
     {
