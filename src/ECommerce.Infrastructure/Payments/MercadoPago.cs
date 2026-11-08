@@ -79,9 +79,9 @@ internal sealed partial class MercadoPagoGateway(HttpClient http, IOptions<Payme
             ["first_name"] = request.Payer.FirstName,
             ["last_name"] = request.Payer.LastName,
         };
-        if (request.Payer.Cpf is { } cpf)
+        if (request.Payer.Document is { } document)
         {
-            payer["identification"] = new { type = "CPF", number = cpf };
+            payer["identification"] = new { type = request.Payer.DocumentType, number = document };
         }
 
         var body = new Dictionary<string, object?>

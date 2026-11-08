@@ -1,6 +1,6 @@
 # Entrega — Fase 4: Checkout e pagamento
 
-**Status:** Planejada em 08/11/2026. **Fatias 4.1 (endereços), 4.2 (pedido), 4.3 (PIX e webhook) e 4.5 (estornos) implementadas e validadas com banco, API em container e as telas no navegador em 08/11/2026** (seção 8); 4.3 e 4.5 com a plataforma falsa, **faltando o sandbox do Mercado Pago**, que depende das credenciais na VM. 4.4 (cartão) em andamento.
+**Status:** Planejada em 08/11/2026. **As cinco fatias estão implementadas e validadas com banco, API em container e as telas no navegador em 08/11/2026** (seção 8). Pagamento, cartão e estorno foram validados com a plataforma falsa; **falta o sandbox do Mercado Pago**, que depende das credenciais e do Funnel na VM, e falta aprovar o visual do checkout com a loja.
 **Repositórios:** `e-commerce-backend` e `e-commerce-frontend` (branch `feat/fase-4` nos dois).
 
 ## 1. Contexto
@@ -171,7 +171,7 @@ Primeiro só build (A), depois banco pelo DBeaver (B) e por último execução (
 | 4.1 — Endereços | Implementada e validada em 08/11/2026 |
 | 4.2 — Pedido | Implementada e validada em 08/11/2026; falta aprovar o visual do checkout |
 | 4.3 — PIX e webhook | Implementada e validada com a plataforma falsa em 08/11/2026; falta o sandbox (credenciais e Funnel na VM) |
-| 4.4 — Cartão | Não iniciada |
+| 4.4 — Cartão | Implementada e validada com o cartão de teste em 08/11/2026; o Brick de verdade depende da chave pública (C9, C10) |
 | 4.5 — Estornos | Implementada e validada com a plataforma falsa em 08/11/2026; falta o estorno no sandbox (C11) |
 
 ### 4.1 — Validação (08/11/2026)
@@ -264,3 +264,34 @@ Primeiro só build (A), depois banco pelo DBeaver (B) e por último execução (
 | Testes | ✅ domínio 191, aplicação 32, arquitetura 8, funcionais **287** (5 novos de estorno: pedido pago cancelado, RN-101, RN-102, estorno recusado, plataforma fora e nova tentativa) |
 | C11 | ✅ com a plataforma falsa, na API em container: cartão aprovado → cancelamento → pagamento `Refunded`, EM-10 e EM-13 no Mailpit. ⏳ falta no sandbox |
 | C12 | ✅ por teste funcional: aprovação depois do cancelamento → estorno, pedido continua cancelado |
+
+### 4.4 — Validação (08/11/2026)
+
+**Como ficou:**
+- O pedido tem as abas **PIX** e **Cartão de crédito**. Com `MERCADOPAGO_PUBLIC_KEY` na loja, o cartão é o **Card Payment Brick** do Mercado Pago, carregado só quando a cliente escolhe cartão; número e CVV nunca passam pela loja (SAQ-A).
+- A chave pública é lida **a cada requisição** pela página do pedido (P9): a mesma imagem serve sandbox e produção. No VM ela entra no `.env` junto com as outras (roteiro no `deploy/dev/README.md`).
+- Sem a chave e com a plataforma falsa, aparece o **cartão de teste** ("aprovado" e "recusado"), só em desenvolvimento. Sem a chave e com o Mercado Pago de verdade, o cartão aparece como indisponível.
+- O documento do titular vem do Brick e vai para o Mercado Pago no lugar do CPF do cadastro (P10); a API confere 11 dígitos (CPF) ou 14 (CNPJ).
+- `GET /api/v1/payments/options` diz quantas parcelas o Brick oferece (`Payments:MaxInstallments`, 1 até a D07) e se há simulação.
+- Recusa mostra o motivo em português (`card-messages.ts`, a partir do `status_detail`) e deixa tentar de novo, com cartão ou PIX (CA3). Cartão em análise (`in_process`) mostra o aviso e a tela consulta até a aprovação.
+
+| Item | Resultado |
+|------|-----------|
+| A1, A2 | ✅ build, format, lint, typecheck; 189 testes da loja; build de produção contra a API local |
+| Testes | ✅ funcionais de pagamento 30 (opções, documento do titular inválido e válido) e adaptador 14 (corpo do cartão com token, parcelas, emissor e documento) |
+| C10 | ✅ com o cartão de teste, na loja: recusado → "O cartão não tem limite para esta compra" e as abas continuam; aprovado → "Pagamento confirmado" na hora |
+| C9 | ⏳ cartão de teste do Mercado Pago no sandbox, pela VM, com a confirmação chegando pelo webhook do Funnel |
+| Primeira carga | ✅ com o build de produção, abrir o link do pedido direto vai para o pedido. O desvio para a home visto duas vezes era da primeira compilação do servidor de desenvolvimento |
+
+## 9. Situação da fase (08/11/2026)
+
+Código das cinco fatias pronto, testado e commitado em `feat/fase-4` nos dois repositórios, **sem merge na `main`** (o merge publica na VM). O que falta não é código:
+
+| # | O que falta | Quem |
+|---|-------------|------|
+| 1 | Credenciais de teste, assinatura secreta e chave pública no `/opt/mo/.env`; Funnel e URL do webhook no Mercado Pago (roteiro no `deploy/dev/README.md`) | Você |
+| 2 | Conta compradora de teste no Mercado Pago, para C9 e C11 | Você |
+| 3 | Rodar C7, C9 e C11 no sandbox e gravar respostas reais nos testes do adaptador | Eu, depois do 1 e do 2 |
+| 4 | Aprovar o visual do checkout e do pagamento | Loja |
+| 5 | Celular de verdade (C13): checkout com o dedo e cópia do código PIX | Você |
+| 6 | Rodar `fase-4-1-schema.sql` a `fase-4-3-schema.sql` no DBeaver, se for usar o banco local por ele (o migrator do container já aplica sozinho) | Você |

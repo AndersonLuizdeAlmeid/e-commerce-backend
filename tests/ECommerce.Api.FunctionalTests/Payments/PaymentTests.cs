@@ -129,6 +129,42 @@ public sealed class PaymentTests(ApiFactory factory) : ShopperTest(factory)
         (await OrderStatusAsync(customer, order)).ShouldBe("PaymentConfirmed");
     }
 
+    [Fact, Trait("Spec", "entrega-4-P11")]
+    public async Task Options_TellTheInstallmentLimitAndTheSimulation()
+    {
+        using var customer = await AuthClient.RegisteredAsync(Factory, "opcoes@loja.teste");
+
+        var options = await JsonAsync(await customer.GetAsync("/api/v1/payments/options"));
+
+        options.GetProperty("maxInstallments").GetInt32().ShouldBe(3);
+        options.GetProperty("canSimulate").GetBoolean().ShouldBeTrue();
+    }
+
+    [Fact, Trait("Spec", "entrega-4-P10")]
+    public async Task Card_WithAnInvalidHolderDocument_IsRefusedByField()
+    {
+        var (customer, order, _) = await PlacedOrderAsync("documento@loja.teste");
+        using var shopper = customer;
+
+        var response = await PayAsync(customer, order, new
+        {
+            method = "CreditCard",
+            cardToken = FakePaymentGateway.ApprovedCardToken,
+            paymentMethodId = "visa",
+            payerDocument = new { type = "CPF", number = "123" },
+        });
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        var valid = await JsonAsync(await PayAsync(customer, order, new
+        {
+            method = "CreditCard",
+            cardToken = FakePaymentGateway.ApprovedCardToken,
+            paymentMethodId = "visa",
+            payerDocument = new { type = "CPF", number = "529.982.247-25" },
+        }));
+        valid.GetProperty("status").GetString().ShouldBe("Approved");
+    }
+
     [Fact, Trait("Spec", "RF-044-CA3")]
     public async Task Card_Rejected_AllowsAnotherTry()
     {

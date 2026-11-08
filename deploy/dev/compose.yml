@@ -128,6 +128,8 @@ services:
     cap_drop: [ALL]
     environment:
       API_INTERNAL_URL: http://api:8080
+      # Chave pública do Mercado Pago (TEST-...), lida a cada requisição: sem ela, o cartão fica indisponível (entrega 4 §3, P9).
+      MERCADOPAGO_PUBLIC_KEY: ${MERCADOPAGO_PUBLIC_KEY:-}
       API_INTERNAL_KEY: ${INTERNAL_KEY:?}
       REVALIDATE_SECRET: ${REVALIDATE_SECRET:?}
     ports: ["127.0.0.1:3100:3000"]

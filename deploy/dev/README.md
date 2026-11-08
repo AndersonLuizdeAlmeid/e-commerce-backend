@@ -72,9 +72,10 @@ Para usar o sandbox do Mercado Pago:
    PAYMENTS_PROVIDER=MercadoPago
    MERCADOPAGO_ACCESS_TOKEN=TEST-...
    MERCADOPAGO_WEBHOOK_SECRET=...
+   MERCADOPAGO_PUBLIC_KEY=TEST-...
    ```
 
-   Depois, `mo-compose up -d api`.
+   Depois, `mo-compose up -d api web`. A chave pública é a única que a loja usa (no formulário do cartão).
 2. **Webhook pela internet, só no caminho dele.** Cole a política nova (`tailscale-policy.hujson`, que libera o
    Funnel só para a VM) e rode na VM:
 

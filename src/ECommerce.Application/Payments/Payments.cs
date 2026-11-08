@@ -29,6 +29,7 @@ public sealed record PaymentResponse(
     string OrderStatus,
     bool CanSimulate);
 
+/// <summary><see cref="PayerDocumentType"/> e <see cref="PayerDocumentNumber"/>: o documento do titular do cartão, pedido pelo Brick.</summary>
 public sealed record PayOrderCommand(
     UserId CustomerId,
     Guid OrderId,
@@ -37,7 +38,20 @@ public sealed record PayOrderCommand(
     string? PaymentMethodId,
     string? IssuerId,
     int? Installments,
-    string? IdempotencyKey) : ICommand<PaymentResponse>;
+    string? IdempotencyKey,
+    string? PayerDocumentType = null,
+    string? PayerDocumentNumber = null) : ICommand<PaymentResponse>;
+
+/// <summary>O que a tela de pagamento precisa saber antes de montar o cartão (entrega 4 §3, P3 e P11).</summary>
+public sealed record PaymentOptionsResponse(bool CanSimulate, int MaxInstallments);
+
+public sealed record GetPaymentOptionsQuery : IQuery<PaymentOptionsResponse>;
+
+internal sealed class GetPaymentOptionsHandler(IPaymentGateway gateway, PaymentOptions options) : IQueryHandler<GetPaymentOptionsQuery, PaymentOptionsResponse>
+{
+    public Task<Result<PaymentOptionsResponse>> Handle(GetPaymentOptionsQuery query, CancellationToken cancellationToken) =>
+        Task.FromResult(Result.Success(new PaymentOptionsResponse(gateway.CanSimulate, options.MaxInstallments)));
+}
 
 public sealed record GetCurrentPaymentQuery(UserId CustomerId, Guid OrderId) : IQuery<PaymentResponse>;
 
@@ -85,6 +99,14 @@ internal sealed class PayOrderValidator : AbstractValidator<PayOrderCommand>
         RuleFor(x => x.PaymentMethodId).NotEmpty().MaximumLength(40).When(x => x.Method == nameof(PaymentMethod.CreditCard));
         RuleFor(x => x.Installments).InclusiveBetween(1, 12).When(x => x.Installments is not null);
         RuleFor(x => x.IdempotencyKey).MaximumLength(100);
+        RuleFor(x => x.PayerDocumentType)
+            .Must(type => type is "CPF" or "CNPJ").WithMessage("Documento do titular: CPF ou CNPJ.")
+            .When(x => x.PayerDocumentNumber is not null);
+        RuleFor(x => x.PayerDocumentNumber)
+            .Must((command, number) => (number ?? string.Empty).All(char.IsAsciiDigit)
+                && (number ?? string.Empty).Length == (command.PayerDocumentType == "CNPJ" ? 14 : 11))
+            .WithMessage("Confira o documento do titular do cartão.")
+            .When(x => x.PayerDocumentNumber is not null);
     }
 }
 
@@ -146,6 +168,10 @@ internal sealed class PayOrderHandler(
         var installments = method == PaymentMethod.CreditCard ? Math.Min(command.Installments ?? 1, paymentOptions.MaxInstallments) : (int?)null;
         var payment = Payment.Start(order.Id, gateway.Name, method, order.Total, installments, method == PaymentMethod.Pix ? order.PaymentDueAtUtc : null, now);
         var payer = await PayerAsync(order.CustomerId, cancellationToken);
+        if (method == PaymentMethod.CreditCard && command.PayerDocumentNumber is { } document)
+        {
+            payer = payer with { Document = document, DocumentType = command.PayerDocumentType ?? "CPF" };
+        }
 
         // Mesma chave a cada nova tentativa da cliente: se a primeira resposta se perdeu, a plataforma não cobra de novo.
         var providerKey = string.IsNullOrWhiteSpace(command.IdempotencyKey) ? payment.Id.ToString() : $"{order.Id:N}-{command.IdempotencyKey}";

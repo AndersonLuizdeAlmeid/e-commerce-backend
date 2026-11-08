@@ -10,7 +10,10 @@ using Microsoft.AspNetCore.Mvc;
 namespace ECommerce.Api.Endpoints.Payments;
 
 /// <summary>Cartão: o Brick devolve o token e o meio; o servidor nunca vê número nem CVV (arquivo 21 §2).</summary>
-internal sealed record PayOrderRequest(string Method, string? CardToken, string? PaymentMethodId, string? IssuerId, int? Installments);
+internal sealed record PayerDocumentRequest(string? Type, string? Number);
+
+internal sealed record PayOrderRequest(
+    string Method, string? CardToken, string? PaymentMethodId, string? IssuerId, int? Installments, PayerDocumentRequest? PayerDocument);
 
 /// <summary>Pagamento do pedido (arquivo 07 §7) e notificação da plataforma (arquivo 07 §8).</summary>
 internal sealed partial class PaymentEndpoints : IEndpointGroup
@@ -36,6 +39,10 @@ internal sealed partial class PaymentEndpoints : IEndpointGroup
             .WithDescription("Passa pelo mesmo caminho do webhook. Com o Mercado Pago de verdade → 404.")
             .RequireRateLimiting(RateLimitPolicies.CustomerWrite);
 
+        app.MapGet("/payments/options", Options).WithTags("Pagamentos").WithName("GetPaymentOptions")
+            .WithSummary("Parcelas permitidas e se há simulação (só com a plataforma falsa)")
+            .RequireAuthorization(Policies.Customer);
+
         app.MapPost("/webhooks/payments/{provider}", Webhook).WithTags("Webhooks").WithName("PaymentWebhook")
             .WithSummary("Notificação da plataforma de pagamento (RF-045)")
             .WithDescription("Sem login e sem CORS. Assinatura inválida → 401. Responde 200 rápido; a consulta à plataforma vai para o Outbox.")
@@ -54,8 +61,24 @@ internal sealed partial class PaymentEndpoints : IEndpointGroup
     {
         var result = await handler.Handle(
             new PayOrderCommand(
-                currentUser.UserId, id, request.Method ?? string.Empty, request.CardToken, request.PaymentMethodId, request.IssuerId, request.Installments, idempotencyKey),
+                currentUser.UserId,
+                id,
+                request.Method ?? string.Empty,
+                request.CardToken,
+                request.PaymentMethodId,
+                request.IssuerId,
+                request.Installments,
+                idempotencyKey,
+                request.PayerDocument?.Type,
+                request.PayerDocument?.Number is { } number ? new string(number.Where(char.IsAsciiDigit).ToArray()) : null),
             cancellationToken);
+        return result.ToHttpResult();
+    }
+
+    private static async Task<Results<Ok<PaymentOptionsResponse>, ProblemHttpResult>> Options(
+        IQueryHandler<GetPaymentOptionsQuery, PaymentOptionsResponse> handler, CancellationToken cancellationToken)
+    {
+        var result = await handler.Handle(new GetPaymentOptionsQuery(), cancellationToken);
         return result.ToHttpResult();
     }
 

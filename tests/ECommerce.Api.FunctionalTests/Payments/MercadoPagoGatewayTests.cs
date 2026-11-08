@@ -99,6 +99,37 @@ public sealed class MercadoPagoGatewayTests : IDisposable
         body.RootElement.GetProperty("payer").TryGetProperty("identification", out _).ShouldBeFalse();
     }
 
+    [Fact, Trait("Spec", "RF-044")]
+    public async Task Card_SendsTheTokenInstallmentsAndHolderDocument()
+    {
+        Respond("POST", "/v1/payments", 201, """{"id": 55, "status": "approved", "status_detail": "accredited", "transaction_amount": 108.86}""");
+
+        var result = await Gateway.CreatePaymentAsync(
+            PixRequest() with
+            {
+                Method = PaymentMethod.CreditCard,
+                ExpiresAtUtc = null,
+                CardToken = "card-token-1",
+                PaymentMethodId = "master",
+                IssuerId = "24",
+                Installments = 3,
+                Payer = new PaymentPayer("maria@loja.teste", "Maria", "da Silva", "52998224725", "CPF"),
+            },
+            Ct);
+
+        result.Value.Status.ShouldBe(PaymentStatus.Approved);
+        using var body = JsonDocument.Parse(_server.LogEntries.Single().RequestMessage!.Body!);
+        var root = body.RootElement;
+        root.GetProperty("token").GetString().ShouldBe("card-token-1");
+        root.GetProperty("payment_method_id").GetString().ShouldBe("master");
+        root.GetProperty("issuer_id").GetString().ShouldBe("24");
+        root.GetProperty("installments").GetInt32().ShouldBe(3);
+        root.TryGetProperty("date_of_expiration", out _).ShouldBeFalse();
+        var identification = root.GetProperty("payer").GetProperty("identification");
+        identification.GetProperty("type").GetString().ShouldBe("CPF");
+        identification.GetProperty("number").GetString().ShouldBe("52998224725");
+    }
+
     [Fact, Trait("Spec", "RF-044-CA3")]
     public async Task ClientError_IsARejection_ServerError_IsUnavailable()
     {

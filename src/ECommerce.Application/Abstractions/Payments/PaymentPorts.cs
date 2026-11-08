@@ -3,8 +3,11 @@ using ECommerce.Domain.Payments;
 
 namespace ECommerce.Application.Abstractions.Payments;
 
-/// <summary>Quem paga: a plataforma exige e-mail; o CPF vai só se a cliente tiver cadastrado (entrega 4 §3, P10).</summary>
-public sealed record PaymentPayer(string Email, string FirstName, string LastName, string? Cpf);
+/// <summary>
+/// Quem paga: a plataforma exige e-mail. O documento vai quando existe: no cartão, o do titular, que o Brick pede; no
+/// PIX, o CPF do cadastro, se a cliente preencheu (entrega 4 §3, P10). <see cref="DocumentType"/> é <c>CPF</c> ou <c>CNPJ</c>.
+/// </summary>
+public sealed record PaymentPayer(string Email, string FirstName, string LastName, string? Document, string DocumentType = "CPF");
 
 /// <summary>
 /// Pedido de cobrança. <see cref="IdempotencyKey"/> repete a mesma chave numa nova tentativa da cliente, então a
