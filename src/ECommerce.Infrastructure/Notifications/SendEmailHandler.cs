@@ -3,15 +3,19 @@ using Dapper;
 using ECommerce.Application.Notifications;
 using ECommerce.Domain.Identity;
 using ECommerce.Infrastructure.Messaging;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace ECommerce.Infrastructure.Notifications;
 
 /// <summary>Mensagem <see cref="SendEmail.Type"/> do Outbox: renderiza, envia e registra em notifications.email_log.</summary>
-internal sealed class SendEmailHandler(
+internal sealed partial class SendEmailHandler(
     IEmailSender sender,
     EmailTemplateRenderer renderer,
     NpgsqlDataSource dataSource,
+    IOptions<EmailSettings> settings,
+    ILogger<SendEmailHandler> logger,
     TimeProvider time) : IOutboxMessageHandler
 {
     public string Type => SendEmail.Type;
@@ -20,6 +24,17 @@ internal sealed class SendEmailHandler(
     {
         var email = JsonSerializer.Deserialize<SendEmail>(payloadJson, OutboxWriter.SerializerOptions)
             ?? throw new InvalidOperationException("Payload de e-mail vazio.");
+
+        if (email.To == SendEmail.StoreRecipient)
+        {
+            if (string.IsNullOrWhiteSpace(settings.Value.StoreAddress))
+            {
+                LogNoStoreAddress(logger, email.Template);
+                return;
+            }
+
+            email = email with { To = settings.Value.StoreAddress };
+        }
 
         var message = renderer.Render(email);
         try
@@ -55,4 +70,7 @@ internal sealed class SendEmailHandler(
             },
             cancellationToken: cancellationToken));
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "E-mail {Template} para a loja descartado: Email:StoreAddress não configurado")]
+    private static partial void LogNoStoreAddress(ILogger logger, string template);
 }

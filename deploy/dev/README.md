@@ -59,6 +59,37 @@ ligado, `ssh root@mo-dev`) ou pelo VNC da Contabo.
 | Banco pelo DBeaver | Conexão com túnel SSH para `mo-dev` (Tailscale ligado), banco em `127.0.0.1:3104`, usuário `ecommerce`, senha em `POSTGRES_PASSWORD` do `/opt/mo/.env` |
 | Aplicar mudanças do `bootstrap.sh` ou dos scripts `mo-*` | Baixar de novo e rodar o `bootstrap.sh` (passo 4): os scripts instalados vêm da `main` |
 
+## Pagamentos com o Mercado Pago (Fase 4.3)
+
+Sem configuração nenhuma, a API usa a plataforma falsa: o PIX aparece e a tela mostra "Simular pagamento aprovado".
+Para usar o sandbox do Mercado Pago:
+
+1. **Credenciais de teste** (painel de desenvolvedores → sua aplicação → Credenciais de teste). Na VM, edite
+   `/opt/mo/.env` como root e acrescente as linhas abaixo, colando os valores **direto no arquivo** (não mande print
+   nem cole no chat):
+
+   ```
+   PAYMENTS_PROVIDER=MercadoPago
+   MERCADOPAGO_ACCESS_TOKEN=TEST-...
+   MERCADOPAGO_WEBHOOK_SECRET=...
+   ```
+
+   Depois, `mo-compose up -d api`.
+2. **Webhook pela internet, só no caminho dele.** Cole a política nova (`tailscale-policy.hujson`, que libera o
+   Funnel só para a VM) e rode na VM:
+
+   ```
+   tailscale funnel --bg --https=10000 --set-path=/api/v1/webhooks/payments http://127.0.0.1:3101/api/v1/webhooks/payments
+   tailscale funnel status
+   ```
+
+   A URL pública é `https://<nome-da-vm>.<sua-rede>.ts.net:10000/api/v1/webhooks/payments/mercadopago`. Confira com
+   `curl -i -X POST` nela: sem assinatura a resposta é `401`, e qualquer outro caminho da porta 10000 dá `404`.
+3. **Cadastrar a URL no Mercado Pago** (aplicação → Webhooks → modo de teste), marcar o evento **Pagamentos** e salvar.
+   A **assinatura secreta** que aparece ali é o `MERCADOPAGO_WEBHOOK_SECRET` do passo 1.
+
+Sem o passo 2, os pagamentos continuam sendo confirmados pela reconciliação, que consulta os pendentes a cada 5 minutos.
+
 ## Backup e restauração
 
 O `mo-backup` roda todo dia às 03:30 e guarda 7 dias em `/opt/mo/backups`. Cobre **só o banco**: as fotos enviadas pelo

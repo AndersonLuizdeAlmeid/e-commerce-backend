@@ -12,6 +12,7 @@ using ECommerce.Domain.Customers;
 using ECommerce.Domain.Identity;
 using ECommerce.Domain.Inventory;
 using ECommerce.Domain.Ordering;
+using ECommerce.Domain.Payments;
 using ECommerce.Domain.Shipping;
 using ECommerce.Infrastructure.Authentication;
 using ECommerce.Infrastructure.Caching;
@@ -19,6 +20,7 @@ using ECommerce.Infrastructure.Images;
 using ECommerce.Infrastructure.Jobs;
 using ECommerce.Infrastructure.Messaging;
 using ECommerce.Infrastructure.Notifications;
+using ECommerce.Infrastructure.Payments;
 using ECommerce.Infrastructure.Persistence;
 using ECommerce.Infrastructure.Persistence.Repositories;
 using ECommerce.Infrastructure.Shipping;
@@ -50,6 +52,11 @@ public static class DependencyInjection
         AddAuthentication(services, configuration, environment);
         AddMessaging(services, configuration);
         services.AddShipping(configuration, environment);
+        services.AddPayments(configuration, environment);
+        services.AddSingleton(sp => new ECommerce.Application.Payments.PaymentOptions
+        {
+            MaxInstallments = sp.GetRequiredService<IOptions<PaymentSettings>>().Value.MaxInstallments,
+        });
 
         services.AddHealthChecks()
             .AddCheck<DatabaseHealthCheck>("postgres", tags: ["ready"]);
@@ -67,6 +74,7 @@ public static class DependencyInjection
         services.AddScoped<ICustomerRepository, CustomerRepository>();
         services.AddScoped<IAddressBookRepository, AddressBookRepository>();
         services.AddScoped<IOrderRepository, OrderRepository>();
+        services.AddScoped<IPaymentRepository, PaymentRepository>();
         services.AddScoped<ICategoryRepository, CategoryRepository>();
         services.AddScoped<ISlugHistory, SlugHistoryRepository>();
         services.AddScoped<IColorRepository, ColorRepository>();
@@ -137,6 +145,8 @@ public static class DependencyInjection
         services.AddScoped<IOutboxMessageHandler, DeleteStoredImageHandler>();
         services.AddScoped<IOutbox, OutboxWriter>();
         services.AddScoped<IOutboxMessageHandler, SendEmailHandler>();
+        services.AddScoped<IOutboxMessageHandler, Payments.SyncPaymentHandler>();
+        services.AddScoped<IOutboxMessageHandler, CancelProviderPaymentHandler>();
         services.AddHostedService<OutboxProcessor>();
         services.AddHostedService<MaintenanceJob>();
         services.AddHostedService<OrderJobs>();

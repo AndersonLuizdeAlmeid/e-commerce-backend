@@ -1,6 +1,6 @@
 # Entrega — Fase 4: Checkout e pagamento
 
-**Status:** Planejada em 08/11/2026. **Fatias 4.1 (endereços) e 4.2 (pedido) implementadas e validadas com banco, API em container e as telas no navegador em 08/11/2026** (seção 8). 4.3 a 4.5 não iniciadas.
+**Status:** Planejada em 08/11/2026. **Fatias 4.1 (endereços), 4.2 (pedido) e 4.3 (PIX e webhook) implementadas e validadas com banco, API em container e as telas no navegador em 08/11/2026** (seção 8); a 4.3 com a plataforma falsa, **faltando o sandbox do Mercado Pago**, que depende das credenciais na VM. 4.4 e 4.5 não iniciadas.
 **Repositórios:** `e-commerce-backend` e `e-commerce-frontend` (branch `feat/fase-4` nos dois).
 
 ## 1. Contexto
@@ -41,7 +41,7 @@ A entrega é feita em **cinco fatias**, cada uma com build verde e checklist pr�
 | P4 | O sandbox do Mercado Pago, pelo que a documentação indica, não oferece um jeito de aprovar um PIX de teste | O caminho de aprovação é validado com **cartão de teste** no sandbox (mesmo webhook e mesma consulta), com o gateway falso e com respostas gravadas no WireMock. O PIX real aprovado fica para a **homologação com valor baixo** da Fase 6, que já está no roadmap | Não travar a fase num limite da plataforma. Confirmar na prática na 4.3 |
 | P5 | O QR do PIX tem prazo próprio na plataforma (24 h por padrão), e o pedido vence em 48 h | `date_of_expiration` do PIX = `payment_due_at` do pedido. Pedir o PIX de novo **devolve o mesmo QR** enquanto ele estiver pendente | O QR não vence antes do pedido, e o cliente não junta vários PIX abertos para o mesmo pedido |
 | P6 | O arquivo 21 tem status próprios, e o Mercado Pago tem outros | `approved` → Approved; `pending`, `in_process`, `authorized` → Pending; `rejected` → Rejected; `cancelled` com motivo de expiração → Expired, os outros → Cancelled; `refunded` → Refunded. `charged_back` e `in_mediation` **não mudam o pedido**: registram o evento e avisam a loja por e-mail | Contestação é tratada à mão no MVP |
-| P7 | O arquivo 21 diz "valida a assinatura" sem detalhar | Cabeçalho `x-signature` (`ts` e `v1`) conferido com HMAC-SHA256 sobre `id:{data.id};request-id:{x-request-id};ts:{ts};` e o segredo do webhook, comparação em tempo constante, `ts` com no máximo 5 min de diferença. A deduplicação em `payment_events` usa o id da notificação | Formato documentado pelo Mercado Pago; a janela de tempo barra reenvio de notificação capturada |
+| P7 | O arquivo 21 diz "valida a assinatura" sem detalhar | Cabeçalho `x-signature` (`ts` e `v1`) conferido com HMAC-SHA256 sobre `id:{data.id};request-id:{x-request-id};ts:{ts};` e o segredo do webhook, comparação em tempo constante. **Sem janela de tempo** (revisto na 4.3): a reentrega legítima chega horas depois, e reenviar uma notificação capturada não faz mal, porque o evento é deduplicado em `payment_events` pelo id da notificação e o pagamento é sempre consultado na plataforma | Formato documentado pelo Mercado Pago |
 | P8 | `POST /orders/{id}/payments` recebe `Idempotency-Key`, mas `payments.payments` não tem onde guardar | Coluna `idempotency_key` com `UNIQUE (order_id, idempotency_key)`. Para o Mercado Pago, a chave enviada em `X-Idempotency-Key` é o `PaymentId` | Duplo clique em "Pagar" não gera duas cobranças, nem do nosso lado nem do lado da plataforma |
 | P9 | A chave pública muda entre sandbox e produção, mas a imagem da loja é a mesma em todos os ambientes | A chave pública é lida **em tempo de execução** pelo servidor do Next (`MERCADOPAGO_PUBLIC_KEY`) e passada ao componente do Brick, sem `NEXT_PUBLIC_` | Uma imagem só, promovida de dev para produção (arquivo 18) |
 | P10 | O Mercado Pago pede dados do pagador, e o CPF é opcional no cadastro (RF-005) | PIX: e-mail e nome da conta, CPF só se o cliente tiver preenchido. Cartão: o próprio Brick pede o CPF do titular. **O CPF não vira obrigatório no cadastro** | Não aumentar o atrito; confirmar no sandbox se o PIX aceita pagador sem CPF |
@@ -80,9 +80,9 @@ Cada script novo entra no `database/gerar-scripts.sh`, que gera um arquivo por f
 |-------|-------|-----------------|-------|
 | `me/addresses` | `GET`, `POST`, `PUT {id}`, `DELETE {id}`, `PUT {id}/default` | Customer, `customer-write` | 4.1 |
 | `orders` | `POST /` (com `Idempotency-Key`), `GET /`, `GET {id}`, `POST {id}/cancel`, `GET settings` (valor da embalagem) | Customer, `customer-write` | 4.2 |
-| `orders/{id}/payments` | `POST` (com `Idempotency-Key`), `GET current` | Customer, política nova `payment` (poucas tentativas por minuto) | 4.3 |
+| `orders/{id}/payments` | `POST` (com `Idempotency-Key`), `GET current` | Customer, `customer-write` | 4.3 |
 | `orders/{id}/payments/simulate-approval` | `POST`, **só em Development e com o gateway falso** | Customer | 4.3 |
-| `webhooks/payments/{provider}` | `POST` | Anônimo, sem CORS, política própria, assinatura obrigatória (P7), responde `200` rápido | 4.3 |
+| `webhooks/payments/{provider}` | `POST` | Anônimo, sem CORS, `public-read`, assinatura obrigatória (P7), responde `200` rápido | 4.3 |
 | `admin/ordering/settings` | `GET`, `PUT` (valor da embalagem) | Admin, `admin-write` | 4.2 |
 
 O `GET current` é consultado pela tela do PIX a cada poucos segundos; ele lê do banco e só vai à plataforma pela reconciliação. Pedido de outro cliente responde `404` em todas as rotas.
@@ -170,7 +170,7 @@ Primeiro só build (A), depois banco pelo DBeaver (B) e por último execução (
 |-------|----------|
 | 4.1 — Endereços | Implementada e validada em 08/11/2026 |
 | 4.2 — Pedido | Implementada e validada em 08/11/2026; falta aprovar o visual do checkout |
-| 4.3 — PIX e webhook | Não iniciada |
+| 4.3 — PIX e webhook | Implementada e validada com a plataforma falsa em 08/11/2026; falta o sandbox (credenciais e Funnel na VM) |
 | 4.4 — Cartão | Não iniciada |
 | 4.5 — Estornos | Não iniciada |
 
@@ -222,3 +222,29 @@ Primeiro só build (A), depois banco pelo DBeaver (B) e por último execução (
 **Observação:** o log da API em container mostra `libgssapi_krb5.so.2: cannot open shared object file`. É o Npgsql procurando a biblioteca de Kerberos, que a imagem *chiseled* não tem; não usamos Kerberos e as conexões funcionam. Não é desta fatia.
 
 **Falta na 4.2:** aprovar o visual do checkout com a loja (uma versão, arquivo 26 §4.6). A tela de pagamento entra na 4.3; até lá, o pedido mostra o prazo e pede para falar com a MO.
+
+### 4.3 — Validação (08/11/2026)
+
+**Como ficou:**
+- A notificação é conferida (P7), gravada em `payment_events` (a repetida é ignorada) e só então vira uma mensagem `payments.sync` do Outbox, que consulta a plataforma e aplica. Se a notificação chega antes do commit de quem criou o pagamento, o Outbox tenta de novo depois.
+- A reconciliação roda no mesmo job do pedido, a cada 5 min, para pendentes sem mudança há mais de 10 min.
+- Cancelar um pedido com PIX aberto manda cancelar o PIX na plataforma (`payments.cancel`, por cortesia: se falhar, ele vence sozinho).
+- **RN-101 e RN-102 nesta fatia só avisam a loja** (EM-12, "Atenção: pagamento do pedido…"): pagamento aprovado depois do cancelamento, segundo pagamento aprovado ou valor diferente do total. O estorno automático é a 4.5.
+- Contestação e chargeback (`in_mediation`, `charged_back`) não mudam nada e avisam a loja (P6).
+- A chave enviada ao Mercado Pago em `X-Idempotency-Key` é `pedido + Idempotency-Key da cliente`: a mesma tentativa repetida não cobra duas vezes nem se a primeira resposta se perdeu (P8).
+- O EM-07 e o EM-12 vão para `Email:StoreAddress` (P12). Em desenvolvimento é `loja@mo.local`, no Mailpit; sem o endereço, o aviso é descartado com log.
+- O cartão já funciona na API (o Brick fica para a 4.4): token, meio, emissor e parcelas, limitadas por `Payments:MaxInstallments` (1 por padrão, P11).
+- A VM continua com a plataforma falsa até as credenciais entrarem no `.env`; o passo a passo está em `deploy/dev/README.md` ("Pagamentos com o Mercado Pago"), junto com a política do Tailscale que libera o Funnel só para a VM.
+
+| Item | Resultado |
+|------|-----------|
+| A1 | ✅ build com 0 avisos; `dotnet format` sem apontamentos além do CRLF |
+| A2 | ✅ lint, typecheck, 187 testes da loja, build de produção contra o stub |
+| Testes | ✅ domínio 191, aplicação 32, arquitetura 8, funcionais **283** (11 de pagamento com a plataforma falsa e 13 do adaptador do Mercado Pago contra WireMock, incluindo a assinatura do webhook) |
+| B1 | ✅ `fase-4-3-schema.sql` aplicado pelo `psql`; o migrator do container vê o script como aplicado |
+| C6 | ✅ Na loja: "Pagar com PIX" → QR, copia e cola e prazo → "Simular pagamento aprovado" → a tela muda sozinha para "Pagamento confirmado"; EM-06 para a cliente e EM-07 para `loja@mo.local` no Mailpit |
+| C7 | ⏳ Falta o sandbox: QR válido e vencimento igual ao do pedido. Com a plataforma falsa, o vencimento já sai igual ao `payment_due_at` |
+| C8 | ✅ Webhook sem assinatura → 401 (teste e container); assinatura de outro segredo ou de outro pagamento → recusada; repetido → não muda nada |
+| API em container | ✅ PIX gerado e webhook sem assinatura com 401 |
+
+**Para fechar a 4.3:** credenciais de teste e assinatura secreta no `/opt/mo/.env`, Funnel ligado, URL cadastrada no Mercado Pago (roteiro no `deploy/dev/README.md`). Depois, conferir C7 e C9 e gravar respostas reais do sandbox nos testes do adaptador.

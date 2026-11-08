@@ -41,6 +41,8 @@ public sealed class SecurityTests(ApiFactory factory) : FunctionalTest(factory)
         "POST /api/v1/auth/refresh",
         "POST /api/v1/auth/register",
         "POST /api/v1/auth/reset-password",
+        // A plataforma de pagamento não faz login: a assinatura da notificação é a autenticação (arquivo 21 §7).
+        "POST /api/v1/webhooks/payments/{provider}",
     ];
 
     [Fact, Trait("Spec", "15-AUTHZ-SWEEP")]

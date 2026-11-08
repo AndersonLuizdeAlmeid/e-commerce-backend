@@ -63,6 +63,29 @@ internal sealed class EmailTemplateRenderer(IOptions<EmailSettings> options)
                 "Pagar agora",
                 "Se você já pagou, pode ignorar este e-mail: a confirmação chega em instantes."),
 
+            EmailTemplates.PaymentConfirmed => BuildOrder(
+                email,
+                $"Pagamento confirmado: pedido {Value(email.Model, "orderNumber")}",
+                $"Olá, {name}! Recebemos o seu pagamento. Agora a MO separa e embala as suas peças; o código de rastreio chega por e-mail quando elas forem enviadas.",
+                "Acompanhar pedido",
+                "Obrigada por comprar com a MO!"),
+
+            EmailTemplates.NewPaidOrder => BuildOrder(
+                email,
+                $"Novo pedido pago: {Value(email.Model, "orderNumber")}",
+                $"{Value(email.Model, "customerName")} ({Value(email.Model, "customerEmail")}) pagou o pedido {Value(email.Model, "orderNumber")}. Já pode separar as peças.",
+                "Abrir o painel",
+                "Aviso automático da loja.",
+                adminLink: true),
+
+            EmailTemplates.PaymentNeedsAttention => BuildOrder(
+                email,
+                $"Atenção: pagamento do pedido {Value(email.Model, "orderNumber")}",
+                $"{Value(email.Model, "problem")} Cliente: {Value(email.Model, "customerName")} ({Value(email.Model, "customerEmail")}). Confira no painel do Mercado Pago.",
+                "Abrir o painel",
+                "Aviso automático da loja.",
+                adminLink: true),
+
             EmailTemplates.OrderCancelled => BuildOrder(
                 email,
                 $"Pedido {Value(email.Model, "orderNumber")} cancelado",
@@ -109,10 +132,10 @@ internal sealed class EmailTemplateRenderer(IOptions<EmailSettings> options)
     }
 
     /// <summary>E-mail de pedido: o texto, o resumo das peças e dos valores, o endereço e, se houver, a dedicatória.</summary>
-    private EmailMessage BuildOrder(SendEmail email, string subject, string intro, string buttonText, string footnote)
+    private EmailMessage BuildOrder(SendEmail email, string subject, string intro, string buttonText, string footnote, bool adminLink = false)
     {
         var baseUrl = options.Value.FrontendBaseUrl.TrimEnd('/');
-        var url = $"{baseUrl}/conta/pedidos/{Uri.EscapeDataString(Value(email.Model, "orderId"))}";
+        var url = adminLink ? $"{baseUrl}/admin" : $"{baseUrl}/conta/pedidos/{Uri.EscapeDataString(Value(email.Model, "orderId"))}";
         var lines = JsonSerializer.Deserialize<List<OrderEmailLine>>(Value(email.Model, "items"), JsonSerializerOptions.Web) ?? [];
 
         var rows = new StringBuilder();

@@ -1,6 +1,7 @@
 using ECommerce.Application.Abstractions.Images;
 using ECommerce.Application.Abstractions.Shipping;
 using ECommerce.Infrastructure.Notifications;
+using ECommerce.Infrastructure.Payments;
 using ECommerce.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -43,7 +44,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         _respawner = await Respawner.CreateAsync(connection, new RespawnerOptions
         {
             DbAdapter = DbAdapter.Postgres,
-            SchemasToInclude = ["catalog", "inventory", "carts", "shipping", "identity", "customers", "ordering", "messaging", "notifications"],
+            SchemasToInclude = ["catalog", "inventory", "carts", "shipping", "identity", "customers", "ordering", "payments", "messaging", "notifications"],
         });
     }
 
@@ -69,6 +70,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
         Emails.Clear();
         ShippingQuotes.Reset();
+        Payments.Reset();
     }
 
     /// <summary>Altera o banco por fora da API (simula escrita do admin ou de outra instância).</summary>
@@ -90,6 +92,11 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
     public FakeShippingProviders PostalCodes => ShippingQuotes;
 
+    public const string StoreEmail = "loja@loja.teste";
+
+    /// <summary>Plataforma de pagamento falsa registrada pela própria API com <c>Payments:Provider = Fake</c>.</summary>
+    public FakePaymentGateway Payments => Services.GetRequiredService<FakePaymentGateway>();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
@@ -108,6 +115,9 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         builder.UseSetting("RateLimiting:AdminWrite:TokenLimit", "100000");
         builder.UseSetting("RateLimiting:ShippingQuote:PermitLimit", "100000");
         builder.UseSetting("Shipping:Provider", "Fake");
+        builder.UseSetting("Payments:Provider", "Fake");
+        builder.UseSetting("Payments:MaxInstallments", "3");
+        builder.UseSetting("Email:StoreAddress", StoreEmail);
 
         builder.ConfigureTestServices(services =>
         {

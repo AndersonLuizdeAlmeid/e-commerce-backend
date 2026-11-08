@@ -27,7 +27,16 @@ internal static class OrderEmails
 {
     private static readonly CultureInfo PtBr = CultureInfo.GetCultureInfo("pt-BR");
 
-    public static async Task EnqueueAsync(IUnitOfWork unitOfWork, IOutbox outbox, string template, Order order, CancellationToken cancellationToken)
+    /// <summary>Aviso à loja (EM-07): mesmo resumo, endereçado ao e-mail da loja.</summary>
+    public static Task EnqueueStoreAsync(IUnitOfWork unitOfWork, IOutbox outbox, string template, Order order, CancellationToken cancellationToken) =>
+        EnqueueAsync(unitOfWork, outbox, template, order, cancellationToken, toStore: true);
+
+    /// <summary>Pagamento que precisa de ação da loja (EM-12): estorno ou contestação.</summary>
+    public static Task EnqueueStoreAlertAsync(IUnitOfWork unitOfWork, IOutbox outbox, Order order, string problem, CancellationToken cancellationToken) =>
+        EnqueueAsync(unitOfWork, outbox, EmailTemplates.PaymentNeedsAttention, order, cancellationToken, toStore: true, problem: problem);
+
+    public static async Task EnqueueAsync(
+        IUnitOfWork unitOfWork, IOutbox outbox, string template, Order order, CancellationToken cancellationToken, bool toStore = false, string? problem = null)
     {
         var customer = await unitOfWork.Connection.QuerySingleAsync<CustomerRow>(new CommandDefinition(
             """
@@ -70,11 +79,14 @@ internal static class OrderEmails
                 CancellationReason.PaymentRejected => "porque o pagamento foi recusado",
                 _ => string.Empty,
             },
+            ["customerName"] = customer.FullName,
+            ["customerEmail"] = customer.Email,
+            ["problem"] = problem ?? string.Empty,
         };
 
         await outbox.EnqueueAsync(
             SendEmail.Type,
-            new SendEmail(template, customer.Email, order.Id, model, new Dictionary<string, string>()),
+            new SendEmail(template, toStore ? SendEmail.StoreRecipient : customer.Email, order.Id, model, new Dictionary<string, string>()),
             cancellationToken);
     }
 

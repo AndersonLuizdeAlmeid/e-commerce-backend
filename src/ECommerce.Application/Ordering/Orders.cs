@@ -330,6 +330,18 @@ internal static class OrderCancellation
             await CatalogChanged.AvailabilityAsync(outbox, cancellationToken);
         }
 
+        // PIX ainda aberto na plataforma: cancela para a cliente não pagar um pedido que não existe mais (arquivo 25 §2).
+        var openPayments = await unitOfWork.Connection.QueryAsync<(string Provider, string ProviderPaymentId)>(new CommandDefinition(
+            "SELECT provider, provider_payment_id FROM payments.payments WHERE order_id = @Id AND status = 'Pending' AND provider_payment_id IS NOT NULL",
+            new { order.Id },
+            unitOfWork.Transaction,
+            cancellationToken: cancellationToken));
+        foreach (var (provider, providerPaymentId) in openPayments)
+        {
+            await outbox.EnqueueAsync(
+                Payments.CancelProviderPaymentMessage.Type, new Payments.CancelProviderPaymentMessage(provider, providerPaymentId), cancellationToken);
+        }
+
         await OrderEmails.EnqueueAsync(unitOfWork, outbox, EmailTemplates.OrderCancelled, order, cancellationToken);
         return Result.Success();
     }

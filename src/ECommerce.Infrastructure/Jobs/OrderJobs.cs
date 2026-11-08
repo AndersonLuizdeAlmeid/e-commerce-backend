@@ -1,5 +1,6 @@
 using ECommerce.Application.Abstractions.Messaging;
 using ECommerce.Application.Ordering;
+using ECommerce.Application.Payments;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -7,7 +8,7 @@ using Microsoft.Extensions.Logging;
 namespace ECommerce.Infrastructure.Jobs;
 
 /// <summary>
-/// Jobs do pedido (arquivo 25 §2): cancelamento em 48 h e lembrete de 24 h, a cada 5 minutos. Cada rodada pega até
+/// Jobs do pedido (arquivo 25 §2): cancelamento em 48 h, lembrete de 24 h e reconciliação dos pagamentos, a cada 5 minutos. Cada rodada pega até
 /// 50 pedidos com <c>FOR UPDATE SKIP LOCKED</c>, então duas instâncias não cancelam o mesmo pedido; se sobrou,
 /// a próxima rodada continua.
 /// </summary>
@@ -46,6 +47,13 @@ internal sealed partial class OrderJobs(IServiceScopeFactory scopes, TimeProvide
             if (reminded.IsFailure)
             {
                 LogFailed(logger, "lembrete de pagamento", reminded.Error.Code);
+            }
+
+            var reconcile = scope.ServiceProvider.GetRequiredService<ICommandHandler<ReconcilePaymentsCommand, int>>();
+            var reconciled = await reconcile.Handle(new ReconcilePaymentsCommand(), cancellationToken);
+            if (reconciled.IsFailure)
+            {
+                LogFailed(logger, "reconciliação de pagamentos", reconciled.Error.Code);
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
