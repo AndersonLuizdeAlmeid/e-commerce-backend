@@ -90,7 +90,7 @@ fi
 chown -R deploy:deploy "$MO_HOME/src"
 sudo -u deploy git -C "$MO_HOME/src" fetch --quiet origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
 # Os scripts instalados vêm da branch publicada e pertencem ao root.
-for script in mo-deploy mo-backup; do
+for script in mo-deploy mo-backup mo-compose mo-restore; do
   # shellcheck disable=SC2024 # o redirecionamento é do root de propósito: o arquivo novo é dele
   sudo -u deploy git -C "$MO_HOME/src" show "origin/$BRANCH:deploy/dev/$script.sh" > "/usr/local/bin/$script.new"
   install -o root -g root -m 755 "/usr/local/bin/$script.new" "/usr/local/bin/$script"

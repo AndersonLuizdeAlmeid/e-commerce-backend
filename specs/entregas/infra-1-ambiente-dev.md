@@ -1,6 +1,6 @@
 # Entrega — Infra 1: ambiente de desenvolvimento na VM
 
-**Status:** Planejada em 07/11/2026. **I.1 e I.2 na `main` e a VM preparada em 07/11/2026** (§9). **I.3 implementada e ensaiada**; o primeiro merge falhou por configuração do GitHub (chave e `STORE_URL`), com os workflows corrigidos para apontar isso (§9).
+**Status:** Planejada em 07/11/2026. **I.1, I.2 e I.3 na `main`; ambiente no ar com deploy automático desde 08/11/2026** (§9). **I.4 implementada e ensaiada**; falta a restauração uma vez na VM real.
 **Repositórios:** `e-commerce-backend` e `e-commerce-frontend` (branch `feat/ambiente-dev` nos dois).
 
 ## 1. Contexto
@@ -188,3 +188,44 @@ Correção nos workflows: o deploy refaz o arquivo da chave só com o conteúdo 
 | `https://mo-dev...ts.net`, com barra final, e `...:8443` | Aceitos |
 | Sem `https://`, dois endereços juntos, espaço no começo | Recusados mostrando o valor |
 | `actionlint` nos dois repositórios | Sem apontamentos |
+
+### I.3 — Primeiro deploy de verdade (08/11/2026)
+
+Com a chave colada de novo e a `STORE_URL` corrigida, os dois deploys passaram. Conferido do meu PC pela rede privada:
+
+| Verificação | Resultado |
+|---|---|
+| `https://mo-dev...ts.net:8443/health/ready` | `Healthy`, com o Postgres |
+| Home da loja | 200, com os produtos do banco da VM (não os da API falsa do build) |
+| Página de produto, `/admin`, `robots.txt` | 200 |
+| `sitemap.xml` | 20 endereços, todos com `https://mo-dev...ts.net` |
+| Mailpit (`:8025`) | E-mail de confirmação de um cadastro feito na loja |
+| Na VM (`docker ps`, print do usuário) | Os cinco serviços do `mo-dev` de pé; as outras aplicações intactas |
+
+### I.4 — Fechamento (08/11/2026)
+
+- `mo-compose`: o Compose do ambiente com os segredos e as versões no ar. O comando de logs que estava no roteiro
+  (`docker compose -p mo-dev logs`) **não funcionava**: sem os arquivos de variáveis, o Compose recusa o
+  `${API_IMAGE:?}`.
+- `mo-restore`: guarda o estado atual, para API e loja, restaura numa transação só, roda as migrations que faltarem e
+  sobe tudo com a loja sem cache de páginas; respeita a trava do `mo-deploy`. O `mo-backup` passa a mostrar o arquivo
+  criado.
+- **Bug achado no ensaio:** num volume novo, o migrator falhava com `connection refused`. O `pg_isready` sem `-h` dava o
+  Postgres como pronto durante a inicialização, quando só o socket local está aberto. O healthcheck agora testa pela
+  rede, nos dois Compose (VM e máquina do dev). Na VM real o primeiro deploy passou por sorte de tempo.
+- Roteiro (`deploy/dev/README.md`) reescrito: acesso, logs, migrations, backup e restauração, troca de cada segredo,
+  recuperação pelo VNC. Arquivo 18 (§1, §2, §4, §5, §7) e roadmap atualizados.
+
+| Ensaio (docker:dind, imagens publicadas da `main`) | Resultado |
+|---|---|
+| Subida do zero com o healthcheck novo | Migrator e API sobem na primeira tentativa (antes: `connection refused`) |
+| Backup → 21 produtos estragados → `mo-restore` | 0 estragados, 21 produtos; backup de segurança criado antes; loja recriada sem as páginas antigas |
+| Nome fora do padrão (`../etc/passwd`) e arquivo inexistente | Recusados |
+| Restauração com um deploy segurando a trava | Espera |
+| API que não fica saudável depois de restaurar | Loja de volta, saída 1 e o nome do backup para desfazer |
+| `mo-compose` sem root | Recusado |
+| `mo-compose logs`, `run --rm migrator` | Funcionam |
+| `shellcheck` nos cinco scripts | Sem apontamentos |
+
+**Falta, na VM real:** rodar o `bootstrap.sh` da `main` depois do merge (instala `mo-compose` e `mo-restore`) e fazer
+uma restauração lá uma vez (§7, I.4).

@@ -26,8 +26,10 @@ services:
     # Só para o DBeaver, por túnel SSH pela rede privada.
     ports: ["127.0.0.1:3104:5432"]
     volumes: [pgdata:/var/lib/postgresql/data]
+    # Pela rede: na primeira inicialização o Postgres sobe um servidor temporário só no socket, e o pg_isready sem -h
+    # o daria como pronto antes da hora (o migrator recebia "connection refused").
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ecommerce -d ecommerce"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ecommerce -d ecommerce"]
       interval: 5s
       retries: 10
     mem_limit: 1g
