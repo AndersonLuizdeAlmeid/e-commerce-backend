@@ -1,6 +1,6 @@
 # Entrega — Infra 1: ambiente de desenvolvimento na VM
 
-**Status:** Planejada em 07/11/2026. **I.1, I.2 e I.3 na `main`; ambiente no ar com deploy automático desde 08/11/2026** (§9). **I.4 implementada e ensaiada**; falta a restauração uma vez na VM real.
+**Status:** Planejada em 07/11/2026. **I.1, I.2 e I.3 na `main`; ambiente no ar com deploy automático desde 08/11/2026** (§9). **I.4 implementada, ensaiada e conferida na VM real em 08/11/2026: Infra 1 concluída** (pendências do usuário no fim do §9).
 **Repositórios:** `e-commerce-backend` e `e-commerce-frontend` (branch `feat/ambiente-dev` nos dois).
 
 ## 1. Contexto
@@ -227,5 +227,21 @@ Com a chave colada de novo e a `STORE_URL` corrigida, os dois deploys passaram. 
 | `mo-compose logs`, `run --rm migrator` | Funcionam |
 | `shellcheck` nos cinco scripts | Sem apontamentos |
 
-**Falta, na VM real:** rodar o `bootstrap.sh` da `main` depois do merge (instala `mo-compose` e `mo-restore`) e fazer
-uma restauração lá uma vez (§7, I.4).
+### Fechamento na VM real (08/11/2026)
+
+| Verificação | Resultado |
+|---|---|
+| `bootstrap.sh` da `main` de novo, com `UFW_ALLOW="80/tcp 443/tcp"` | Atalhos instalados; firewall **ligado** (22, 80, 443 e a interface do Tailscale) |
+| `mo-backup` | Mostra o arquivo criado |
+| `mo-restore` de um backup do dia | Feito pelo usuário; depois dele, loja, `/admin` e `/health/ready` respondendo pela rede privada, com os produtos na home |
+| Chave de deploy | O bootstrap avisou que a chave em uso não tinha `from=` (era a de antes, exposta num print). Trocada com `--new-deploy-key` e atualizada nos dois repositórios |
+
+**Pendências que ficam com o usuário, fora da Infra 1:**
+
+- A chave nova só é exercitada no próximo deploy. Se ele falhar com `Permission denied`, um dos repositórios ficou com
+  a chave antiga: comparar a impressão digital do log com `ssh-keygen -lf /etc/ssh/authorized_keys/deploy` na VM.
+- O SSH continua aceitando senha (10 logins por senha em 30 dias). Trocar esses acessos por chave e rodar o bootstrap
+  de novo desliga a senha.
+- Regra `5433/tcp` aberta para qualquer lugar no `ufw`, anterior a este trabalho: remover se nada usa a porta.
+- Senha forte no VNC da Contabo.
+- Tailscale do PC: se a loja der `NXDOMAIN`, o cliente está desconectado (aconteceu em 08/11).
