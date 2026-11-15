@@ -124,3 +124,7 @@ gen database/fase-4-2-schema.sql schemaversions "$P.Migrations" \
 gen database/fase-4-3-schema.sql schemaversions "$P.Migrations" \
   "Fase 4.3 — pagamentos e notificações da plataforma" "$P.Migrations.V0018__ordering.sql" \
   $M/V0019__payments.sql
+
+gen database/fase-5-schema.sql schemaversions "$P.Migrations" \
+  "Fase 5 — pagamento manual e índices do painel (pedidos, estornos, usuários e dashboard)" "$P.Migrations.V0019__payments.sql" \
+  $M/V0020__backoffice.sql

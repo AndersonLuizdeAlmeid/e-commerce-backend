@@ -57,6 +57,10 @@ public static class DependencyInjection
         {
             MaxInstallments = sp.GetRequiredService<IOptions<PaymentSettings>>().Value.MaxInstallments,
         });
+        services.AddSingleton(new ECommerce.Application.Ordering.OrderingOptions
+        {
+            TrackingUrlTemplate = configuration["Ordering:TrackingUrlTemplate"],
+        });
 
         services.AddHealthChecks()
             .AddCheck<DatabaseHealthCheck>("postgres", tags: ["ready"]);

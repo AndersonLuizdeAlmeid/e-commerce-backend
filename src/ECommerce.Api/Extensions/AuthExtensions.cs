@@ -50,7 +50,11 @@ internal static class AuthExtensions
         services.AddAuthorizationBuilder()
             // Seguro por padrão: endpoint público precisa declarar AllowAnonymous.
             .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build())
-            .AddPolicy(Policies.Customer, policy => policy.RequireRole(nameof(Role.Customer)))
+            // Cliente também confere o stamp (arquivo 08 §2, RN-092): conta desativada ou promovida pelo painel deixa de
+            // comprar com o token antigo (entrega 5 §3, P7). O stamp fica 1 min em cache, limpo pelo painel na mudança.
+            .AddPolicy(Policies.Customer, policy => policy
+                .RequireRole(nameof(Role.Customer))
+                .AddRequirements(new ActiveSecurityStampRequirement()))
             .AddPolicy(Policies.Admin, policy => policy
                 .RequireRole(nameof(Role.Admin))
                 .AddRequirements(new ActiveSecurityStampRequirement()));

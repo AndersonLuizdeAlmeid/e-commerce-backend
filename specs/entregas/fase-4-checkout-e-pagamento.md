@@ -285,7 +285,7 @@ Primeiro só build (A), depois banco pelo DBeaver (B) e por último execução (
 
 ## 9. Situação da fase (08/11/2026)
 
-Código das cinco fatias pronto, testado e commitado em `feat/fase-4` nos dois repositórios, **sem merge na `main`** (o merge publica na VM). O que falta não é código:
+Código das cinco fatias pronto, testado e **já na `main` dos dois repositórios** (PR #9 no backend, #6 no frontend), junto com a correção da assinatura do webhook (PR #10 no backend). O que falta não é código:
 
 | # | O que falta | Quem |
 |---|-------------|------|

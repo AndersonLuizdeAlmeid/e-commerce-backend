@@ -32,4 +32,12 @@ public static class IdentityErrors
 
     public static readonly Error ConcurrencyConflict =
         Error.Conflict("Identity.ConcurrencyConflict", "Os dados foram alterados por outra operação. Tente novamente.");
+
+    /// <summary>RF-054 CA1: ninguém se tranca fora do painel.</summary>
+    public static readonly Error CannotChangeSelf =
+        Error.BusinessRule("Identity.CannotChangeSelf", "Você não pode desativar nem rebaixar a sua própria conta. Peça a outra administradora.");
+
+    /// <summary>RF-054 CA2: a loja sempre tem uma administradora ativa.</summary>
+    public static readonly Error LastAdmin =
+        Error.BusinessRule("Identity.LastAdmin", "Esta é a única administradora ativa. Promova outra conta antes.");
 }

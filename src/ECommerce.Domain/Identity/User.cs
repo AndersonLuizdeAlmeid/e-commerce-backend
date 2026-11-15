@@ -143,4 +143,35 @@ public sealed class User : AggregateRoot<UserId>
         EmailConfirmedAtUtc = nowUtc;
         UpdatedAtUtc = nowUtc;
     }
+
+    /// <summary>
+    /// Ativa ou desativa a conta (RF-054). Desativar troca o security stamp: o token que ela tem deixa de valer no
+    /// próximo request (entrega 5 §3, P7). Devolve falso quando nada muda.
+    /// </summary>
+    public bool SetActive(bool isActive, DateTime nowUtc)
+    {
+        if (IsActive == isActive)
+        {
+            return false;
+        }
+
+        IsActive = isActive;
+        SecurityStamp = Guid.NewGuid();
+        UpdatedAtUtc = nowUtc;
+        return true;
+    }
+
+    /// <summary>Promove ou rebaixa (RF-054). Troca o stamp: o papel antigo do token deixa de valer na hora.</summary>
+    public bool ChangeRole(Role role, DateTime nowUtc)
+    {
+        if (Role == role)
+        {
+            return false;
+        }
+
+        Role = role;
+        SecurityStamp = Guid.NewGuid();
+        UpdatedAtUtc = nowUtc;
+        return true;
+    }
 }

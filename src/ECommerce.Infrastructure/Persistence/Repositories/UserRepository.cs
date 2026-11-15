@@ -26,6 +26,14 @@ internal sealed class UserRepository(IUnitOfWork unitOfWork) : IUserRepository
         unitOfWork.Connection.ExecuteScalarAsync<bool>(Command(
             "SELECT EXISTS (SELECT 1 FROM identity.users WHERE role = 'Admin' AND is_active)", null, cancellationToken));
 
+    public async Task<IReadOnlyList<UserId>> LockActiveAdminsAsync(CancellationToken cancellationToken)
+    {
+        // Ordem fixa por id: duas transações travando as mesmas linhas não se cruzam (sem deadlock).
+        var ids = await unitOfWork.Connection.QueryAsync<Guid>(Command(
+            "SELECT id FROM identity.users WHERE role = 'Admin' AND is_active ORDER BY id FOR UPDATE", null, cancellationToken));
+        return ids.Select(id => new UserId(id)).ToList();
+    }
+
     public async Task<bool> TryAddAsync(User user, CancellationToken cancellationToken)
     {
         // ON CONFLICT em vez de capturar 23505: um erro abortaria a transação inteira.

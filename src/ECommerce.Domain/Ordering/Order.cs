@@ -36,6 +36,32 @@ public static class OrderErrors
 
     public static readonly Error InvalidGiftWrapPrice =
         Error.Validation("Ordering.InvalidGiftWrapPrice", "Informe um valor de embalagem entre R$ 0 e R$ 1.000.");
+
+    public static readonly Error InvalidTrackingCode = Error.Validation(
+        "Ordering.InvalidTrackingCode", $"O código de rastreio tem de {TrackingCode.MinLength} a {TrackingCode.MaxLength} letras e números, sem espaços.");
+
+    public static readonly Error NotAGift = Error.BusinessRule("Ordering.NotAGift", "Este pedido não é presente: não tem dedicatória.");
+
+    public static readonly Error GiftMessageLocked =
+        Error.BusinessRule("Ordering.GiftMessageLocked", "A dedicatória só pode ser corrigida até o pedido ser enviado.");
+}
+
+/// <summary>
+/// Código de rastreio (entrega 5 §3, P3): Correios usam <c>AA123456789BR</c>, outras transportadoras do Melhor Envio
+/// usam outros formatos. Aceita letras e números, gravado em maiúsculas.
+/// </summary>
+public static class TrackingCode
+{
+    public const int MinLength = 8;
+    public const int MaxLength = 40;
+
+    public static Result<string> Normalize(string? value)
+    {
+        var code = (value ?? string.Empty).Trim().ToUpperInvariant();
+        return code.Length is >= MinLength and <= MaxLength && code.All(char.IsAsciiLetterOrDigit)
+            ? code
+            : OrderErrors.InvalidTrackingCode;
+    }
 }
 
 /// <summary>Peças sem saldo no momento da compra (RF-040 CA2): a resposta lista cada uma.</summary>
@@ -150,9 +176,11 @@ public sealed class Order
         DateTime paymentDueAtUtc,
         DateTime? paymentReminderSentAtUtc,
         DateTime updatedAtUtc,
-        int version)
+        int version,
+        string? trackingCode)
     {
         Id = id;
+        TrackingCode = trackingCode;
         Number = number;
         CustomerId = customerId;
         _items = items;
@@ -184,7 +212,7 @@ public sealed class Order
 
     public ShippingSelection Shipping { get; }
 
-    public OrderGift Gift { get; }
+    public OrderGift Gift { get; private set; }
 
     /// <summary>Valor da embalagem congelado no checkout (RF-047 CA2); zero quando não pediu embalagem.</summary>
     public decimal GiftWrapPrice { get; }
@@ -194,6 +222,9 @@ public sealed class Order
     public OrderStatus Status { get; private set; }
 
     public CancellationReason? CancellationReason { get; private set; }
+
+    /// <summary>Obrigatório a partir de enviado (RF-053 CA3).</summary>
+    public string? TrackingCode { get; private set; }
 
     public DateTime PlacedAtUtc { get; }
 
@@ -252,7 +283,8 @@ public sealed class Order
             nowUtc + PaymentWindow,
             null,
             nowUtc,
-            0);
+            0,
+            null);
         order._newHistory.Add(new OrderStatusChange(Guid.CreateVersion7(), null, OrderStatus.PendingPayment, customerId, nowUtc, null));
         return order;
     }
@@ -274,9 +306,10 @@ public sealed class Order
         DateTime paymentDueAtUtc,
         DateTime? paymentReminderSentAtUtc,
         DateTime updatedAtUtc,
-        int version) =>
+        int version,
+        string? trackingCode = null) =>
         new(id, number, customerId, items.ToList(), address, shipping, gift, giftWrapPrice, notes, status, cancellationReason,
-            placedAtUtc, paymentDueAtUtc, paymentReminderSentAtUtc, updatedAtUtc, version);
+            placedAtUtc, paymentDueAtUtc, paymentReminderSentAtUtc, updatedAtUtc, version, trackingCode);
 
     /// <summary>Uso exclusivo da Infrastructure: o número vem da sequência na gravação.</summary>
     public void AssignNumber(long number) => Number = number;
@@ -321,6 +354,99 @@ public sealed class Order
     }
 
     public bool IsPaymentOverdue(DateTime nowUtc) => Status == OrderStatus.PendingPayment && nowUtc >= PaymentDueAtUtc;
+
+    /// <summary>A loja começa a separar (arquivo 04 §4.8): só de pagamento confirmado.</summary>
+    public Result StartPreparation(UserId by, DateTime nowUtc) =>
+        Status == OrderStatus.PaymentConfirmed
+            ? MoveTo(OrderStatus.Preparing, by, nowUtc, null)
+            : Result.Failure(OrderErrors.InvalidTransition);
+
+    /// <summary>Enviado (RF-053 CA3): só de em separação, e sempre com o código de rastreio.</summary>
+    public Result Ship(string? trackingCode, UserId by, DateTime nowUtc)
+    {
+        if (Status != OrderStatus.Preparing)
+        {
+            return Result.Failure(OrderErrors.InvalidTransition);
+        }
+
+        var code = Ordering.TrackingCode.Normalize(trackingCode);
+        if (code.IsFailure)
+        {
+            return Result.Failure(code.Error);
+        }
+
+        TrackingCode = code.Value;
+        return MoveTo(OrderStatus.Shipped, by, nowUtc, $"Rastreio {code.Value}");
+    }
+
+    /// <summary>Corrige o rastreio de pedido já enviado (entrega 5 §3, P3): fica no histórico, sem novo e-mail.</summary>
+    public Result UpdateTrackingCode(string? trackingCode, UserId by, DateTime nowUtc)
+    {
+        if (Status != OrderStatus.Shipped)
+        {
+            return Result.Failure(OrderErrors.InvalidTransition);
+        }
+
+        var code = Ordering.TrackingCode.Normalize(trackingCode);
+        if (code.IsFailure)
+        {
+            return Result.Failure(code.Error);
+        }
+
+        if (code.Value == TrackingCode)
+        {
+            return Result.Success();
+        }
+
+        var previous = TrackingCode;
+        TrackingCode = code.Value;
+        return Record(by, nowUtc, $"Rastreio corrigido: {previous} → {code.Value}");
+    }
+
+    /// <summary>Entregue: só de enviado.</summary>
+    public Result Deliver(UserId by, DateTime nowUtc) =>
+        Status == OrderStatus.Shipped
+            ? MoveTo(OrderStatus.Delivered, by, nowUtc, null)
+            : Result.Failure(OrderErrors.InvalidTransition);
+
+    /// <summary>
+    /// RF-047 CA3: a loja corrige a dedicatória até o pedido ser enviado. O texto não vai para o histórico (CA4): a nota
+    /// diz só que mudou.
+    /// </summary>
+    public Result CorrectGiftMessage(string? message, UserId by, DateTime nowUtc)
+    {
+        if (!Gift.IsGift)
+        {
+            return Result.Failure(OrderErrors.NotAGift);
+        }
+
+        if (Status is OrderStatus.Shipped or OrderStatus.Delivered or OrderStatus.Cancelled)
+        {
+            return Result.Failure(OrderErrors.GiftMessageLocked);
+        }
+
+        var gift = OrderGift.Create(true, Gift.Wrap, message);
+        if (gift.IsFailure)
+        {
+            return Result.Failure(gift.Error);
+        }
+
+        if (gift.Value.Message == Gift.Message)
+        {
+            return Result.Success();
+        }
+
+        Gift = gift.Value;
+        return Record(by, nowUtc, "Dedicatória corrigida");
+    }
+
+    /// <summary>Mudança sem troca de situação (rastreio, dedicatória): uma linha no histórico com a mesma situação.</summary>
+    private Result Record(UserId by, DateTime nowUtc, string note)
+    {
+        _newHistory.Add(new OrderStatusChange(Guid.CreateVersion7(), Status, Status, by, nowUtc, note));
+        UpdatedAtUtc = nowUtc;
+        return Result.Success();
+    }
 
     private Result MoveTo(OrderStatus status, UserId? by, DateTime nowUtc, string? note)
     {

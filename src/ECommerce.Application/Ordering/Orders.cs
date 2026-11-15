@@ -42,7 +42,21 @@ public sealed record OrderItemResponse(
 public sealed record OrderAddressResponse(
     string Recipient, string PostalCode, string Street, string Number, string? Complement, string District, string City, string State);
 
-public sealed record OrderShippingResponse(string ServiceCode, string Name, decimal Price, int? DeliveryDays, bool IsFallback, string? TrackingCode);
+/// <summary><see cref="TrackingUrl"/>: só quando a loja configurou o link da transportadora (entrega 5 §3, P4).</summary>
+public sealed record OrderShippingResponse(
+    string ServiceCode, string Name, decimal Price, int? DeliveryDays, bool IsFallback, string? TrackingCode, string? TrackingUrl);
+
+/// <summary>Configuração do pedido que vem do ambiente (seção <c>Ordering</c>).</summary>
+public sealed class OrderingOptions
+{
+    /// <summary>Link de rastreio com <c>{code}</c> no lugar do código. Vazio: só o código aparece (entrega 5 §3, P4).</summary>
+    public string? TrackingUrlTemplate { get; init; }
+
+    public string? TrackingUrl(string? trackingCode) =>
+        string.IsNullOrWhiteSpace(trackingCode) || string.IsNullOrWhiteSpace(TrackingUrlTemplate)
+            ? null
+            : TrackingUrlTemplate.Replace("{code}", Uri.EscapeDataString(trackingCode), StringComparison.Ordinal);
+}
 
 public sealed record OrderGiftResponse(bool IsGift, bool Wrap, string? Message, decimal WrapPrice);
 
@@ -166,7 +180,7 @@ internal sealed class ListMyOrdersHandler(IDbConnectionFactory connectionFactory
     }
 }
 
-internal sealed class GetMyOrderHandler(IDbConnectionFactory connectionFactory) : IQueryHandler<GetMyOrderQuery, OrderResponse>
+internal sealed class GetMyOrderHandler(IDbConnectionFactory connectionFactory, OrderingOptions options) : IQueryHandler<GetMyOrderQuery, OrderResponse>
 {
     private const string Sql = """
         SELECT id, number, status, cancellation_reason, placed_at, payment_due_at, subtotal, shipping_fee, gift_wrap_price, total,
@@ -221,7 +235,9 @@ internal sealed class GetMyOrderHandler(IDbConnectionFactory connectionFactory) 
             order.ShippingFee,
             order.GiftWrapPrice,
             order.Total,
-            new OrderShippingResponse(order.ShippingService, order.ShippingServiceName, order.ShippingFee, order.ShippingDays, order.ShippingIsFallback, order.TrackingCode),
+            new OrderShippingResponse(
+                order.ShippingService, order.ShippingServiceName, order.ShippingFee, order.ShippingDays, order.ShippingIsFallback, order.TrackingCode,
+                options.TrackingUrl(order.TrackingCode)),
             new OrderAddressResponse(
                 order.ShipRecipient, order.ShipPostalCode, order.ShipStreet, order.ShipNumber, order.ShipComplement, order.ShipDistrict, order.ShipCity, order.ShipState),
             new OrderGiftResponse(order.IsGift, order.GiftWrap, order.GiftMessage, order.GiftWrapPrice),
@@ -293,10 +309,12 @@ internal static class OrderCancellation
         IUnitOfWork unitOfWork,
         IOutbox outbox,
         DateTime nowUtc,
+        string? note,
         CancellationToken cancellationToken)
     {
-        var wasPaid = order.Status == OrderStatus.PaymentConfirmed;
-        var cancelled = order.Cancel(reason, by, nowUtc);
+        // Em separação também já foi pago: só a loja cancela (arquivo 04 §4.8) e o estorno é o mesmo.
+        var wasPaid = order.Status is OrderStatus.PaymentConfirmed or OrderStatus.Preparing;
+        var cancelled = order.Cancel(reason, by, nowUtc, note);
         if (cancelled.IsFailure)
         {
             return cancelled;
@@ -381,7 +399,7 @@ internal sealed class CancelMyOrderHandler(
         }
 
         return await OrderCancellation.CancelAsync(
-            order, CancellationReason.CustomerRequest, command.CustomerId, orders, stock, unitOfWork, outbox, time.GetUtcNow().UtcDateTime, cancellationToken);
+            order, CancellationReason.CustomerRequest, command.CustomerId, orders, stock, unitOfWork, outbox, time.GetUtcNow().UtcDateTime, null, cancellationToken);
     }
 }
 
@@ -398,7 +416,7 @@ internal sealed class CancelOverdueOrdersHandler(
         foreach (var order in overdue)
         {
             var result = await OrderCancellation.CancelAsync(
-                order, CancellationReason.PaymentTimeout, null, orders, stock, unitOfWork, outbox, now, cancellationToken);
+                order, CancellationReason.PaymentTimeout, null, orders, stock, unitOfWork, outbox, now, null, cancellationToken);
             if (result.IsFailure)
             {
                 return result.Error;

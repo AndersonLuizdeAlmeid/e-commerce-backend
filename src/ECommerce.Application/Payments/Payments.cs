@@ -456,7 +456,8 @@ internal sealed class RefundPaymentHandler(
     public async Task<Result> Handle(RefundPaymentCommand command, CancellationToken cancellationToken)
     {
         var payment = await payments.GetForUpdateAsync(command.PaymentId, cancellationToken);
-        if (payment is null || payment.Status != PaymentStatus.Approved || payment.ProviderPaymentId is null)
+        // RefundFailed: a loja pediu para tentar de novo pela fila de estornos pendentes (entrega 5 §3, P6).
+        if (payment is null || payment.Status is not (PaymentStatus.Approved or PaymentStatus.RefundFailed) || payment.ProviderPaymentId is null)
         {
             // Já estornado (mensagem repetida) ou nada a estornar.
             return Result.Success();
