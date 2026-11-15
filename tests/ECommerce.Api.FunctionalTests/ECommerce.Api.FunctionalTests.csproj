@@ -19,6 +19,7 @@
     <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="Respawn" />
     <PackageReference Include="WireMock.Net" />
+    <PackageReference Include="Microsoft.AspNetCore.WebUtilities" />
   </ItemGroup>
 
   <ItemGroup>
