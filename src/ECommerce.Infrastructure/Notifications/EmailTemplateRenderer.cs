@@ -10,7 +10,7 @@ namespace ECommerce.Infrastructure.Notifications;
 
 /// <summary>
 /// Templates em pt-BR, HTML simples com estilos inline + versão texto (arquivo 23 §4): conta (EM-01..03) e pedido
-/// (EM-04, EM-05, EM-10).
+/// (EM-04..EM-10, EM-12, EM-13).
 /// Todo valor vindo do usuário passa por HtmlEncode; tokens vão só no link.
 /// </summary>
 internal sealed class EmailTemplateRenderer(IOptions<EmailSettings> options)
@@ -92,6 +92,21 @@ internal sealed class EmailTemplateRenderer(IOptions<EmailSettings> options)
                 $"Olá, {name}! Estornamos o valor de {Value(email.Model, "total")} do pedido {Value(email.Model, "orderNumber")}. O prazo para o dinheiro aparecer depende do seu banco ou da administradora do cartão.",
                 "Ver pedido",
                 "Qualquer dúvida, fale com a MO."),
+
+            EmailTemplates.OrderShipped => BuildOrder(
+                email,
+                $"Seu pedido {Value(email.Model, "orderNumber")} foi enviado",
+                $"Olá, {name}! Suas peças já estão a caminho por {Value(email.Model, "carrier")}. Código de rastreio: {Value(email.Model, "trackingCode")}." +
+                (Value(email.Model, "trackingUrl") is { Length: > 0 } trackingUrl ? $" Acompanhe em {trackingUrl}" : string.Empty),
+                "Acompanhar pedido",
+                "O prazo da transportadora começa a contar a partir de hoje. Qualquer dúvida, fale com a MO."),
+
+            EmailTemplates.OrderDelivered => BuildOrder(
+                email,
+                $"Pedido {Value(email.Model, "orderNumber")} entregue",
+                $"Olá, {name}! Seu pedido foi entregue. Esperamos que as peças tragam muita alegria.",
+                "Ver pedido",
+                "Se algo não chegou como esperado, responda este e-mail ou fale com a MO pelo WhatsApp."),
 
             EmailTemplates.OrderCancelled => BuildOrder(
                 email,

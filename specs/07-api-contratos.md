@@ -171,13 +171,16 @@ Exemplo `POST /orders/{id}/payments` (PIX) → `201`:
 | GET/POST | `/shipping/rules` | Regras de frete: `{ name, priority, isActive, validFrom?, validTo?, minSubtotal?, states[], postalCodeRanges: [{ from, to }], serviceCodes[], effect, effectValue? }`. Condição vazia vale para todos |
 | PUT/DELETE | `/shipping/rules/{id}` | Editar/remover |
 | GET | `/orders?status&from&to&customerId&paymentMethod&page` | Pedidos (RF-053) |
-| GET | `/orders/{id}` | Detalhe com histórico e pagamentos |
-| POST | `/orders/{id}/confirm-payment` | Exceção manual, `{ reason }` obrigatório |
+| GET | `/orders/{id}` | Detalhe com cliente, histórico (autor e nota), pagamentos e `allowedActions` |
+| POST | `/orders/{id}/confirm-payment` | Exceção manual, `{ reason }` obrigatório; grava pagamento `Manual` (entrega 5 §3 P1) |
 | POST | `/orders/{id}/start-preparation` | → EmSeparacao |
-| POST | `/orders/{id}/ship` | `{ trackingCode }` → Enviado |
-| POST | `/orders/{id}/deliver` | → Entregue |
-| POST | `/orders/{id}/cancel` | `{ reason }` → Cancelado (+ estorno) |
-| GET | `/payments/refunds/pending` | Estornos com falha para tratamento |
+| POST | `/orders/{id}/ship` | `{ trackingCode }` (8 a 40 letras e números) → Enviado + EM-08 |
+| PUT | `/orders/{id}/tracking` | `{ trackingCode }` corrige o rastreio de pedido enviado, sem e-mail |
+| POST | `/orders/{id}/deliver` | → Entregue + EM-09 |
+| POST | `/orders/{id}/cancel` | `{ reason }` → Cancelado (+ estorno); o motivo fica só no histórico |
+| GET | `/payments/refunds/pending` | Dinheiro preso de pedido cancelado: `kind` = `RefundFailed`, `RefundNotDone` ou `ManualPayment` |
+| POST | `/payments/{id}/refund`, `/payments/{id}/sync` | Nova tentativa de estorno / consulta à plataforma (`204`) |
+| POST | `/payments/{id}/mark-refunded` | `{ note }`: só pagamento `Manual`, devolvido pela loja; manda o EM-13 |
 | GET | `/users?role&isActive&search&page` | Usuários (RF-054) |
 | PATCH | `/users/{id}/status`, `/users/{id}/role` | Ativar/desativar, mudar perfil |
 | GET | `/dashboard?from&to` | Indicadores (RF-055) |

@@ -13,7 +13,7 @@ internal sealed class OrderRepository(IUnitOfWork unitOfWork) : IOrderRepository
         id, number, customer_id, status, shipping_fee, gift_wrap_price,
         shipping_service, shipping_service_name, shipping_days, shipping_is_fallback,
         ship_recipient, ship_postal_code, ship_street, ship_number, ship_complement, ship_district, ship_city, ship_state,
-        is_gift, gift_wrap, gift_message, cancellation_reason, notes,
+        is_gift, gift_wrap, gift_message, cancellation_reason, notes, tracking_code,
         payment_due_at, payment_reminder_sent_at, version, placed_at, updated_at
         """;
 
@@ -111,7 +111,7 @@ internal sealed class OrderRepository(IUnitOfWork unitOfWork) : IOrderRepository
         var updated = await unitOfWork.Connection.ExecuteAsync(Command(
             """
             UPDATE ordering.orders
-               SET status = @Status, cancellation_reason = @CancellationReason,
+               SET status = @Status, cancellation_reason = @CancellationReason, tracking_code = @TrackingCode, gift_message = @GiftMessage,
                    payment_reminder_sent_at = @ReminderSentAt, updated_at = @UpdatedAt, version = version + 1
              WHERE id = @Id AND version = @Version
             """,
@@ -120,6 +120,8 @@ internal sealed class OrderRepository(IUnitOfWork unitOfWork) : IOrderRepository
                 order.Id,
                 Status = order.Status.ToString(),
                 CancellationReason = order.CancellationReason?.ToString(),
+                order.TrackingCode,
+                GiftMessage = order.Gift.Message,
                 ReminderSentAt = order.PaymentReminderSentAtUtc,
                 UpdatedAt = order.UpdatedAtUtc,
                 order.Version,
@@ -224,7 +226,8 @@ internal sealed class OrderRepository(IUnitOfWork unitOfWork) : IOrderRepository
                 row.PaymentDueAt,
                 row.PaymentReminderSentAt,
                 row.UpdatedAt,
-                row.Version))
+                row.Version,
+                row.TrackingCode))
             .ToList();
     }
 
@@ -276,6 +279,7 @@ internal sealed class OrderRepository(IUnitOfWork unitOfWork) : IOrderRepository
         public string? GiftMessage { get; init; }
         public string? CancellationReason { get; init; }
         public string? Notes { get; init; }
+        public string? TrackingCode { get; init; }
         public DateTime PaymentDueAt { get; init; }
         public DateTime? PaymentReminderSentAt { get; init; }
         public int Version { get; init; }

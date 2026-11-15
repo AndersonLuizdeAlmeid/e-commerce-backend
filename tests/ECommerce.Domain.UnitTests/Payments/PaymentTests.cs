@@ -66,4 +66,33 @@ public sealed class PaymentTests
         payment.Status.ShouldBe(PaymentStatus.Refunded);
         payment.MarkRefunded(Now.AddHours(3)).ShouldBeFalse();
     }
+
+    [Fact, Trait("Spec", "RF-053-CA1")]
+    public void Manual_IsBornApproved_WithTheReason()
+    {
+        var payment = Payment.RecordManual(Guid.CreateVersion7(), 111.30m, "  PIX direto na conta da loja ", Now);
+
+        payment.Method.ShouldBe(PaymentMethod.Manual);
+        payment.Provider.ShouldBe(Payment.ManualProvider);
+        payment.IsManual.ShouldBeTrue();
+        payment.Status.ShouldBe(PaymentStatus.Approved);
+        payment.ApprovedAtUtc.ShouldBe(Now);
+        payment.ProviderPaymentId.ShouldBeNull();
+        payment.StatusDetail.ShouldBe("PIX direto na conta da loja");
+    }
+
+    [Fact, Trait("Spec", "RF-053-CA1")]
+    public void OnlyManual_IsMarkedRefundedByTheStore()
+    {
+        var manual = Payment.RecordManual(Guid.CreateVersion7(), 111.30m, "PIX direto", Now);
+        manual.MarkRefundedManually("Devolvido por PIX", Now.AddDays(1)).ShouldBeTrue();
+        manual.Status.ShouldBe(PaymentStatus.Refunded);
+        manual.StatusDetail.ShouldBe("PIX direto · Devolvido: Devolvido por PIX");
+        manual.MarkRefundedManually("De novo", Now.AddDays(2)).ShouldBeFalse();
+
+        var provider = Pending();
+        provider.Apply(Snapshot(PaymentStatus.Approved), Now);
+        provider.MarkRefundedManually("Devolvido por PIX", Now).ShouldBeFalse();
+        provider.Status.ShouldBe(PaymentStatus.Approved);
+    }
 }

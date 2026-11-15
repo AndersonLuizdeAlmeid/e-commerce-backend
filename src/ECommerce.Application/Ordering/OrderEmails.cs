@@ -43,7 +43,8 @@ internal static class OrderEmails
         CancellationToken cancellationToken,
         bool toStore = false,
         string? problem = null,
-        bool refund = false)
+        bool refund = false,
+        string? trackingUrl = null)
     {
         var customer = await unitOfWork.Connection.QuerySingleAsync<CustomerRow>(new CommandDefinition(
             """
@@ -90,6 +91,9 @@ internal static class OrderEmails
             ["customerEmail"] = customer.Email,
             ["problem"] = problem ?? string.Empty,
             ["refund"] = refund ? "true" : "false",
+            ["carrier"] = order.Shipping.ServiceName,
+            ["trackingCode"] = order.TrackingCode ?? string.Empty,
+            ["trackingUrl"] = trackingUrl ?? string.Empty,
         };
 
         await outbox.EnqueueAsync(

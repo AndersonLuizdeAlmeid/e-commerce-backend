@@ -10,6 +10,8 @@ public static class EmailTemplates
     public const string PaymentReminder = "EM-05";
     public const string PaymentConfirmed = "EM-06";
     public const string NewPaidOrder = "EM-07";
+    public const string OrderShipped = "EM-08";
+    public const string OrderDelivered = "EM-09";
     public const string OrderCancelled = "EM-10";
 
     /// <summary>Estorno feito (RN-101, RN-102 e cancelamento de pedido pago).</summary>

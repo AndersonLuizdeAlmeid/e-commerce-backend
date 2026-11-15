@@ -58,6 +58,7 @@ Entregas incrementais em **fatias verticais**: cada fase vai do banco à tela e 
 - Frontend: checkout completo, tela de pagamento PIX, meus pedidos.
 
 ## Fase 5 — Backoffice de pedidos e usuários
+> 🔎 **Implementada em 15/11/2026** nas quatro fatias (pedidos, estornos pendentes, usuários, dashboard) e validada com banco, API em container, Mailpit e as telas; faltam aprovar as telas, o link de rastreio e o celular de verdade: [entregas/fase-5-backoffice.md](entregas/fase-5-backoffice.md).
 - RF-053 (status, rastreio), RF-054 (usuários), RF-055 (dashboard), estornos pendentes.
 - Frontend: telas admin correspondentes.
 

@@ -7,6 +7,12 @@ public interface IUserRepository
     Task<User?> GetByEmailAsync(Email email, CancellationToken cancellationToken);
     Task<bool> ExistsByEmailAsync(Email email, CancellationToken cancellationToken);
     Task<bool> AnyActiveAdminAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Trava as administradoras ativas até o fim da transação e devolve quem são (RF-054 CA2): duas mudanças ao mesmo
+    /// tempo esperam uma pela outra e a segunda conta de novo.
+    /// </summary>
+    Task<IReadOnlyList<UserId>> LockActiveAdminsAsync(CancellationToken cancellationToken);
     /// <summary><c>false</c> quando outro cadastro com o mesmo e-mail venceu a corrida (UNIQUE no banco).</summary>
     Task<bool> TryAddAsync(User user, CancellationToken cancellationToken);
 

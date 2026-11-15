@@ -20,6 +20,15 @@ public static class PaymentErrors
     public static readonly Error MethodNotAvailable =
         Error.Validation("Payments.MethodNotAvailable", "Escolha PIX ou cartão de crédito.");
 
+    public static readonly Error NothingToRefund =
+        Error.BusinessRule("Payments.NothingToRefund", "Este pagamento não está esperando estorno.");
+
+    public static readonly Error ManualOnly = Error.BusinessRule(
+        "Payments.ManualOnly", "Só o pagamento confirmado à mão é marcado como devolvido pela loja. Os outros são conferidos no Mercado Pago.");
+
+    public static readonly Error NotOnProvider =
+        Error.BusinessRule("Payments.NotOnProvider", "Este pagamento foi confirmado à mão e não existe no Mercado Pago.");
+
     public static readonly Error SimulationNotAvailable =
         Error.NotFound("Payments.SimulationNotAvailable", "A simulação só existe no ambiente de desenvolvimento.");
 }
@@ -28,6 +37,9 @@ public enum PaymentMethod
 {
     Pix,
     CreditCard,
+
+    /// <summary>Confirmado à mão pela loja, fora da plataforma (RF-053 CA1, entrega 5 §3 P1).</summary>
+    Manual,
 }
 
 public enum PaymentStatus
@@ -133,6 +145,41 @@ public sealed class Payment
     public int Version { get; }
 
     public bool IsFinal => Status is not PaymentStatus.Pending;
+
+    /// <summary>Provedor do pagamento confirmado à mão: não existe na plataforma, não tem id externo nem estorno automático.</summary>
+    public const string ManualProvider = "manual";
+
+    public bool IsManual => Provider == ManualProvider;
+
+    /// <summary>
+    /// Pagamento conciliado fora do sistema (RF-053 CA1): nasce aprovado com o valor do pedido e o motivo, para o pedido,
+    /// o dashboard e a regra de um aprovado por pedido enxergarem o mesmo dinheiro (entrega 5 §3, P1).
+    /// </summary>
+    public static Payment RecordManual(Guid orderId, decimal amount, string reason, DateTime nowUtc)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+        return new Payment(
+            Guid.CreateVersion7(), orderId, ManualProvider, null, PaymentMethod.Manual, PaymentStatus.Approved, reason.Trim(), amount, null,
+            null, null, null, nowUtc, nowUtc, nowUtc, 0);
+    }
+
+    /// <summary>
+    /// A loja devolveu à mão o pagamento confirmado à mão (entrega 5 §3, P2). Só para <see cref="ManualProvider"/>: o
+    /// que passou pela plataforma só vira estornado quando ela confirma.
+    /// </summary>
+    public bool MarkRefundedManually(string note, DateTime nowUtc)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(note);
+        if (!IsManual || Status != PaymentStatus.Approved)
+        {
+            return false;
+        }
+
+        Status = PaymentStatus.Refunded;
+        StatusDetail = $"{StatusDetail} · Devolvido: {note.Trim()}";
+        UpdatedAtUtc = nowUtc;
+        return true;
+    }
 
     public static Payment Start(Guid orderId, string provider, PaymentMethod method, decimal amount, int? installments, DateTime? expiresAtUtc, DateTime nowUtc) =>
         new(Guid.CreateVersion7(), orderId, provider, null, method, PaymentStatus.Pending, null, amount, installments, null, null, expiresAtUtc, null, nowUtc, nowUtc, 0);
