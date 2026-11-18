@@ -150,6 +150,11 @@ else
   sed -i "s#^STORE_URL=.*#STORE_URL=$STORE_URL#" "$MO_HOME/.env"
   echo "já existiam; mantidos"
 fi
+# Papel da API com privilégio mínimo (entrega 6 §3, P6): acrescentado também em .env que já existia.
+if ! grep -q '^DB_APP_PASSWORD=' "$MO_HOME/.env"; then
+  printf 'DB_APP_USER=mo_app\nDB_APP_PASSWORD=%s\n' "$(openssl rand -hex 24)" >> "$MO_HOME/.env"
+  echo "papel da API (mo_app) acrescentado; vale a partir do próximo deploy do backend"
+fi
 chown root:deploy "$MO_HOME/.env"
 chmod 640 "$MO_HOME/.env"
 

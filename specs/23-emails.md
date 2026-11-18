@@ -33,7 +33,8 @@ Em desenvolvimento: **Mailpit** (container que captura os e-mails localmente —
 | EM-08 | `OrderShipped` | Cliente | Enviado + código e link de rastreio |
 | EM-09 | `OrderDelivered` | Cliente | Entregue |
 | EM-10 | `OrderCancelled` | Cliente | Cancelado (motivo: pelo cliente, pela loja, ou **falta de pagamento em 48 h**) + estorno quando houver |
-| EM-11 | Estoque baixo (diário) | Admin | Variações abaixo do limiar |
+| EM-11 | Estoque baixo (diário) | Admin | Variações à venda no limiar ou abaixo; às 8h de São Paulo, só se houver alguma (entrega 6 §3, P4) |
+| EM-14 | Alerta técnico | Quem opera (`Ops:AlertEmail`) | Mensagem que desistiu, fila atrasada, PIX aprovado sem webhook, frete de contingência. Sai **direto pelo provedor**, sem Outbox, no máximo a cada 6 h por condição (entrega 6 §3, P3) |
 
 ## 4. Implementação
 

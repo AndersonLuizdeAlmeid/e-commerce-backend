@@ -128,3 +128,7 @@ gen database/fase-4-3-schema.sql schemaversions "$P.Migrations" \
 gen database/fase-5-schema.sql schemaversions "$P.Migrations" \
   "Fase 5 — pagamento manual e índices do painel (pedidos, estornos, usuários e dashboard)" "$P.Migrations.V0019__payments.sql" \
   $M/V0020__backoffice.sql
+
+gen database/fase-6-schema.sql schemaversions "$P.Migrations" \
+  "Fase 6.1 — reserva do Outbox e marcas dos jobs de operação (EM-11, EM-14)" "$P.Migrations.V0020__backoffice.sql" \
+  $M/V0021__outbox_lease_and_ops.sql

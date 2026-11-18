@@ -81,6 +81,9 @@ services:
     environment:
       DOTNET_ENVIRONMENT: Development
       ConnectionStrings__Database: Host=postgres;Port=5432;Database=ecommerce;Username=ecommerce;Password=${POSTGRES_PASSWORD:?}
+      # Papel da API, só com leitura e escrita de dados (entrega 6 §3, P6). Vazio no .env: a API segue com o usuário dono.
+      Database__AppRole: ${DB_APP_USER:-}
+      Database__AppPassword: ${DB_APP_PASSWORD:-}
     depends_on:
       postgres: { condition: service_healthy }
 
@@ -92,7 +95,7 @@ services:
     tmpfs: [/tmp]
     environment:
       ASPNETCORE_ENVIRONMENT: Development
-      ConnectionStrings__Database: Host=postgres;Port=5432;Database=ecommerce;Username=ecommerce;Password=${POSTGRES_PASSWORD:?}
+      ConnectionStrings__Database: Host=postgres;Port=5432;Database=ecommerce;Username=${DB_APP_USER:-ecommerce};Password=${DB_APP_PASSWORD:-${POSTGRES_PASSWORD:?}}
       Jwt__SigningKey: ${JWT_SIGNING_KEY:?}
       RateLimiting__InternalKey: ${INTERNAL_KEY:?}
       AdminSeed__Email: ${ADMIN_EMAIL:?}

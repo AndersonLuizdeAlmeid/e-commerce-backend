@@ -26,4 +26,9 @@
     <EmbeddedResource Include="Persistence\Seeds\Development\*.sql" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Vigia de operação e processador do Outbox chamados direto pelos testes (entrega 6.1). -->
+    <InternalsVisibleTo Include="ECommerce.Api.FunctionalTests" />
+  </ItemGroup>
+
 </Project>

@@ -6,8 +6,8 @@ using Npgsql;
 namespace ECommerce.Infrastructure.Jobs;
 
 /// <summary>
-/// Limpeza diária (arquivo 08 §7, arquivo 05 §6): tokens expirados ou revogados há mais de 30 dias e Outbox
-/// processado há mais de 90. O advisory lock evita duas instâncias limpando ao mesmo tempo (arquivo 25 §2).
+/// Limpeza diária (arquivo 08 §7, arquivo 05 §6, entrega 6 §3 P10): tokens expirados ou revogados há mais de 30 dias,
+/// Outbox processado há mais de 90 e registro de e-mails com mais de 180. O advisory lock evita duas instâncias limpando ao mesmo tempo (arquivo 25 §2).
 /// </summary>
 internal sealed partial class MaintenanceJob(NpgsqlDataSource dataSource, TimeProvider time, ILogger<MaintenanceJob> logger)
     : BackgroundService
@@ -24,6 +24,8 @@ internal sealed partial class MaintenanceJob(NpgsqlDataSource dataSource, TimePr
                  WHERE coalesce(used_at, expires_at) < now() - interval '30 days';
                 DELETE FROM messaging.outbox_messages
                  WHERE processed_at < now() - interval '90 days';
+                DELETE FROM notifications.email_log
+                 WHERE created_at < now() - interval '180 days';
             END IF;
         END
         $$;

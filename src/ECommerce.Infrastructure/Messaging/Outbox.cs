@@ -39,8 +39,19 @@ public sealed class OutboxSettings
     public const string SectionName = "Outbox";
 
     public int PollingIntervalMilliseconds { get; init; } = 5000;
+
+    /// <summary>Máximo de mensagens reservadas de uma vez; na prática, limitado pelas vagas livres.</summary>
     public int BatchSize { get; init; } = 20;
 
     /// <summary>Depois disso a mensagem fica com <c>failed_at</c> e vira alerta (arquivo 23 §4).</summary>
     public int MaxAttempts { get; init; } = 5;
+
+    /// <summary>Vagas de processamento: uma chamada lenta ocupa só a sua, e as outras mensagens seguem (entrega 6 §3, P1).</summary>
+    public int MaxParallelism { get; init; } = 4;
+
+    /// <summary>
+    /// Prazo da reserva. Precisa passar do maior timeout dos handlers (Resend 15 s, loja 10 s, Mercado Pago 25 s no total); se a
+    /// API cair no meio, a mensagem volta para a fila depois dele.
+    /// </summary>
+    public int LeaseSeconds { get; init; } = 300;
 }

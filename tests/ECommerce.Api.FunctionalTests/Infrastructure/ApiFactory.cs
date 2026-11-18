@@ -28,7 +28,17 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
     private Respawner _respawner = null!;
 
+    /// <summary>Dono do banco: migrations, Respawn e as escritas "por fora" dos testes.</summary>
     public string ConnectionString => _postgres.GetConnectionString();
+
+    public const string AppRole = "mo_app";
+    private const string AppPassword = "mo-app-testes-funcionais";
+
+    /// <summary>
+    /// A API roda com o papel de privilégio mínimo (entrega 6 §3, P6), como em produção: qualquer rota que precisasse de
+    /// DDL ou de escrever no journal das migrations quebraria nos testes.
+    /// </summary>
+    public string AppConnectionString => new NpgsqlConnectionStringBuilder(ConnectionString) { Username = AppRole, Password = AppPassword }.ConnectionString;
 
     public FakeEmailSender Emails { get; } = new();
 
@@ -38,13 +48,14 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
         var migration = DatabaseMigrator.Migrate(ConnectionString, includeDevelopmentSeed: false);
         migration.Successful.ShouldBeTrue(migration.Error?.ToString());
+        DatabaseMigrator.ApplyAppRole(ConnectionString, AppRole, AppPassword);
 
         await using var connection = new NpgsqlConnection(ConnectionString);
         await connection.OpenAsync();
         _respawner = await Respawner.CreateAsync(connection, new RespawnerOptions
         {
             DbAdapter = DbAdapter.Postgres,
-            SchemasToInclude = ["catalog", "inventory", "carts", "shipping", "identity", "customers", "ordering", "payments", "messaging", "notifications"],
+            SchemasToInclude = ["catalog", "inventory", "carts", "shipping", "identity", "customers", "ordering", "payments", "messaging", "notifications", "ops"],
         });
     }
 
@@ -94,13 +105,15 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
     public const string StoreEmail = "loja@loja.teste";
 
+    public const string AlertEmail = "alertas@loja.teste";
+
     /// <summary>Plataforma de pagamento falsa registrada pela própria API com <c>Payments:Provider = Fake</c>.</summary>
     public FakePaymentGateway Payments => Services.GetRequiredService<FakePaymentGateway>();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
-        builder.UseSetting("ConnectionStrings:Database", ConnectionString);
+        builder.UseSetting("ConnectionStrings:Database", AppConnectionString);
         builder.UseSetting("Cors:AllowedOrigins:0", AllowedOrigin);
         builder.UseSetting("Jwt:SigningKey", JwtTestKey);
         builder.UseSetting("Auth:RefreshCookie:Secure", "false"); // TestServer é http
@@ -118,6 +131,9 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         builder.UseSetting("Payments:Provider", "Fake");
         builder.UseSetting("Payments:MaxInstallments", "3");
         builder.UseSetting("Email:StoreAddress", StoreEmail);
+        // EM-11 e vigia de operação: os testes chamam quando precisam, sem a rodada de 5 em 5 minutos no meio.
+        builder.UseSetting("Ops:ScheduledJobsEnabled", "false");
+        builder.UseSetting("Ops:AlertEmail", AlertEmail);
 
         builder.ConfigureTestServices(services =>
         {

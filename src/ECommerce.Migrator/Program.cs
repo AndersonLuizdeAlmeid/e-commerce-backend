@@ -20,5 +20,15 @@ if (!result.Successful)
     return 1;
 }
 
+// Papel com que a API se conecta, só com leitura e escrita de dados (entrega 6 §3, P6). Sem a configuração, nada muda:
+// a API continua com o usuário do migrator, como antes.
+var appRole = builder.Configuration["Database:AppRole"];
+var appPassword = builder.Configuration["Database:AppPassword"];
+if (!string.IsNullOrWhiteSpace(appRole) && !string.IsNullOrWhiteSpace(appPassword))
+{
+    DatabaseMigrator.ApplyAppRole(connectionString, appRole, appPassword);
+    Console.WriteLine($"Permissões do papel '{appRole}' aplicadas.");
+}
+
 Console.WriteLine("Banco atualizado.");
 return 0;
