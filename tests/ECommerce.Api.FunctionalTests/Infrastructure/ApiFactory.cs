@@ -28,7 +28,17 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
     private Respawner _respawner = null!;
 
+    /// <summary>Dono do banco: migrations, Respawn e as escritas "por fora" dos testes.</summary>
     public string ConnectionString => _postgres.GetConnectionString();
+
+    public const string AppRole = "mo_app";
+    private const string AppPassword = "mo-app-testes-funcionais";
+
+    /// <summary>
+    /// A API roda com o papel de privilégio mínimo (entrega 6 §3, P6), como em produção: qualquer rota que precisasse de
+    /// DDL ou de escrever no journal das migrations quebraria nos testes.
+    /// </summary>
+    public string AppConnectionString => new NpgsqlConnectionStringBuilder(ConnectionString) { Username = AppRole, Password = AppPassword }.ConnectionString;
 
     public FakeEmailSender Emails { get; } = new();
 
@@ -38,6 +48,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
         var migration = DatabaseMigrator.Migrate(ConnectionString, includeDevelopmentSeed: false);
         migration.Successful.ShouldBeTrue(migration.Error?.ToString());
+        DatabaseMigrator.ApplyAppRole(ConnectionString, AppRole, AppPassword);
 
         await using var connection = new NpgsqlConnection(ConnectionString);
         await connection.OpenAsync();
@@ -102,7 +113,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
-        builder.UseSetting("ConnectionStrings:Database", ConnectionString);
+        builder.UseSetting("ConnectionStrings:Database", AppConnectionString);
         builder.UseSetting("Cors:AllowedOrigins:0", AllowedOrigin);
         builder.UseSetting("Jwt:SigningKey", JwtTestKey);
         builder.UseSetting("Auth:RefreshCookie:Secure", "false"); // TestServer é http

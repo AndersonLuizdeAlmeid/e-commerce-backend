@@ -84,7 +84,19 @@ public sealed class OperationsTests(ApiFactory factory) : ShopperTest(factory)
         var reserved = await Factory.QuerySingleAsync<bool>("SELECT locked_until > now() AND lock_token IS NOT NULL FROM messaging.outbox_messages");
         reserved.ShouldBeTrue();
         await Factory.Emails.WaitForAsync("lenta@loja.teste", "senha foi alterada", TimeSpan.FromSeconds(15));
-        (await Factory.QuerySingleAsync<bool>("SELECT processed_at IS NOT NULL AND locked_until IS NULL FROM messaging.outbox_messages")).ShouldBeTrue();
+
+        // A marcação vem depois do envio (e do email_log): espera ela aparecer em vez de conferir na hora.
+        var released = false;
+        for (var attempt = 0; attempt < 50 && !released; attempt++)
+        {
+            released = await Factory.QuerySingleAsync<bool>("SELECT processed_at IS NOT NULL AND locked_until IS NULL FROM messaging.outbox_messages");
+            if (!released)
+            {
+                await Task.Delay(100, CancellationToken);
+            }
+        }
+
+        released.ShouldBeTrue();
     }
 
     [Fact, Trait("Spec", "ENT-6-P1")]

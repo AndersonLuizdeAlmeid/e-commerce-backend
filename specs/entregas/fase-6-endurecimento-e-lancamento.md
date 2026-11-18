@@ -1,6 +1,6 @@
 # Entrega — Fase 6: Endurecimento e lançamento
 
-**Status:** Planejada em 16/11/2026. **6.1 implementada e validada em 16/11/2026** com testes, scripts por `psql` num banco vazio e API em container com Mailpit (seção 8). As outras fatias ainda não começaram.
+**Status:** Planejada em 16/11/2026. **6.1 implementada e validada em 16/11/2026** com testes, scripts por `psql` num banco vazio e API em container com Mailpit. **6.2 implementada e validada em 18/11/2026**, menos a varredura ZAP, que depende do staging (6.5). Detalhes na seção 8. As outras fatias ainda não começaram.
 **Repositórios:** `e-commerce-backend` e `e-commerce-frontend` (branch `feat/fase-6` nos dois).
 
 ## 1. Contexto
@@ -201,7 +201,7 @@ Primeiro só build (A), depois banco (B) e por último execução (C). **A fase 
 | Fatia | Situação |
 |-------|----------|
 | 6.1 — Outbox, jobs e alertas internos | ✅ Implementada e validada em 16/11/2026. As métricas OTLP do §4.2 ficaram para a 6.5, junto com o Grafana Cloud |
-| 6.2 — Segurança | Planejada |
+| 6.2 — Segurança | ✅ Implementada e validada em 18/11/2026. Falta a varredura ZAP (C6), que depende do staging, e conferir a CSP com o cartão no sandbox (C5). Duas decisões de senha e login esperam você (abaixo) |
 | 6.3 — LGPD, páginas legais e devolução | Planejada; textos dependem do §6 item 4 |
 | 6.4 — E2E e carga | Planejada; k6 depende da 6.5 |
 | 6.5 — Produção e staging | Planejada; depende do domínio e da VM |
@@ -232,6 +232,43 @@ Primeiro só build (A), depois banco (B) e por último execução (C). **A fase 
 | C4 | ✅ API em container: EM-11 com as 6 variações no limiar ("esgotada" ou "1 em estoque"), horário das 8h de São Paulo calculado certo no Linux; uma vez por dia e nada sem item no limiar (testes funcionais) |
 
 **Achado na validação:** o banco local tem **188 `payments.sync` que desistiram** desde 08/11, todos do mesmo PIX da plataforma falsa (`fake-1-023d…`). A plataforma falsa guarda os pagamentos em memória e os perde quando a API reinicia; a reconciliação continua pedindo a sincronização a cada 15 min. Só acontece com o gateway falso, mas em desenvolvimento o EM-14 vai avisar disso a cada 6 h até o pagamento sair de "pendente".
+
+### Ajustes ao plano feitos na 6.2
+
+- **Papel da API criado pelo migrator, não pelo bootstrap (P6).** Com `Database:AppRole` e `Database:AppPassword`, o migrator cria ou atualiza o `mo_app` e reaplica as permissões a cada deploy, então schema e tabela novos já nascem liberados para a API. A senha fica no `.env` como os outros segredos. Na VM é compatível com o que está no ar: sem `DB_APP_*` no `.env`, a API segue com o usuário dono. O bootstrap só acrescenta as duas variáveis (roteiro no `deploy/dev/README.md`). O dono continua sendo o `ecommerce`, superusuário da imagem do Postgres, usado só pelo migrator.
+- **Os testes funcionais rodam a API como `mo_app`**: nenhuma rota precisou de mais do que ler e gravar dados.
+- **CSP no `next.config`, não num proxy.** Os endereços (`NEXT_PUBLIC_*`) já são fixados no build de cada ambiente, e o `CSP_MODE` vem junto. O ISR continua (`x-nextjs-cache: HIT`).
+- **zod sem JIT.** O zod 4 testa `Function("")` para compilar validadores, o que gerava violação a cada abertura do painel. Ele cai sozinho no caminho sem JIT, mas o ruído esconderia violação de verdade. Agora o `z` vem de `@/shared/lib/zod`, com `jitless`, e o lint barra importar `zod` direto.
+- **gitleaks pela imagem oficial fixada por digest**, no lugar da action. Os dois achados do histórico eram a linha do CI que remonta a chave de deploy a partir do segredo (só o texto BEGIN/END); estão no `.gitleaksignore`. A imagem só é publicada se o histórico estiver limpo.
+- **`npm audit --audit-level=high` inclui as ferramentas de build**, não só o runtime.
+- **`CSP_MODE` no Dockerfile da loja** (build arg): a imagem é gerada por ambiente, e o modo vai junto. Conferido no build da imagem: `Report-Only` e HSTS gravados no manifesto de rotas.
+
+### Achados da revisão ASVS nível 2 (18/11/2026)
+
+Os testes já cobriam IDOR, autorização do `/admin`, rotas anônimas, CORS, rate limit, rotação de refresh token e webhook assinado. A revisão olhou o resto: JWT (algoritmo, emissor, público, validade), lockout, cookie (`HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth`), detalhes do readiness, limite de corpo, uploads, log de requisição (sem query string) e links dos e-mails (vêm da configuração, não do `Host`).
+
+| # | Achado | ASVS | Situação |
+|---|--------|------|----------|
+| S1 | Respostas autenticadas da API (perfil, pedidos, painel) saíam **sem `Cache-Control`**: CDN ou navegador compartilhado podiam guardar dado pessoal | V8.2.1 | ✅ Corrigido: tudo que não declara cache sai com `no-store`; o catálogo público continua com `public, max-age`. Teste novo |
+| S2 | **Redirect aberto depois do login**: `/login?next=/%09/site.com` passava no filtro e o navegador, que apaga tab e quebra de linha, levava a cliente para outro site | V5.1.5 | ✅ Corrigido: o destino é resolvido como o navegador resolve e precisa ter a mesma origem. Testes novos e conferido no navegador |
+| S3 | **zod 4.1.12** com vulnerabilidade alta (memória ao validar coleções grandes, GHSA-mrhx-c7xc-m3w5) e **Next 16.4.2** com duas moderadas de cache (GHSA-mfr8-8qww-v76h, GHSA-vc7v-qv4w-wrv8) | V14.2.1 | ✅ Atualizados para zod 4.6.7 e Next 16.4.6. Runtime sem vulnerabilidade; sobram 7 moderadas só em ferramenta de lint (`minimatch`) |
+| S4 | A regra de senha **exige maiúscula, minúscula e número**. O ASVS pede o contrário: nenhuma regra de composição, senha longa e bloqueio de senhas vazadas ou muito comuns | V2.1.7, V2.1.9 | ⏳ **Decisão sua**: muda o cadastro de todas as clientes |
+| S5 | **Sem segundo fator no painel.** Quem tiver a senha da administradora tem a loja inteira (pedidos, estornos, dados das clientes). O roadmap deixava o 2FA para depois do lançamento | V2.2 / L2 | ⏳ **Decisão sua**: trazer para antes do lançamento ou aceitar o risco |
+
+### Validação da 6.2 (18/11/2026)
+
+| Item | Resultado |
+|------|-----------|
+| A1 | ✅ `dotnet build` com 0 avisos; `dotnet format` sem apontamento novo (só o fim de linha CRLF e os 5 espaços do `AuthExtensions.cs`, que não foi mexido) |
+| A2 | ✅ lint, typecheck, **213 testes** da loja (11 novos) e build de produção contra a API em container |
+| A3 | ✅ `npm audit --audit-level=high` sem achado; gitleaks no histórico inteiro dos dois repositórios sem achado (com o `.gitleaksignore`); `actionlint` sem erro nos quatro workflows. CodeQL e Dependabot só rodam no GitHub, no primeiro push |
+| Testes | ✅ aplicação 36, domínio 211, arquitetura 8, funcionais **329 de 329** com a API como `mo_app` (11 novos: privilégio do banco e cache). Uma falha intermitente num teste da 6.1, que conferia a marcação do Outbox antes de ela acontecer; o teste agora espera a marcação e passou em três rodadas seguidas |
+| B2 | ✅ Como `mo_app`: `CREATE TABLE` (inclusive em `public`), `DROP`, `ALTER`, `TRUNCATE`, `CREATE SCHEMA`, `CREATE ROLE` e `DELETE` no journal → `permission denied`; leitura, escrita e sequências funcionam; o papel não é superusuário nem cria papel ou banco |
+| B2 (container) | ✅ O migrator criou o `mo_app` no banco local e a API em container passou a usá-lo (5 conexões `mo_app`, nenhuma da API como dono) |
+| C5 | 🟡 Loja em produção: headers certos em vitrine e painel, câmera liberada só no `/admin`, HSTS só com https. **Nenhuma violação** em home, produto, categoria, sacola, login, Meus pedidos e painel (dashboard, pedidos, produtos, estoque, frete). Uma violação forjada chegou ao `/api/csp-report`, então o relatório funciona. ⏳ Falta o cartão: sem a chave pública do Mercado Pago, a loja local não carrega o SDK. A CSP fica em `Report-Only` até isso |
+| C6 | ⏳ Varredura ZAP: depende do staging (6.5) |
+
+**O que fazer no GitHub depois do merge:** em Settings → Code security dos dois repositórios, ligar **Dependabot alerts** e **Dependabot security updates** (o arquivo `.github/dependabot.yml` cuida só das atualizações semanais), e conferir se o **secret scanning** com push protection está ligado.
 
 ### Riscos
 

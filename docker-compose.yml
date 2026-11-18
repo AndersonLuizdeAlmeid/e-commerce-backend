@@ -50,6 +50,9 @@ services:
     environment:
       DOTNET_ENVIRONMENT: Development
       ConnectionStrings__Database: Host=postgres;Port=5432;Database=ecommerce;Username=ecommerce;Password=ecommerce
+      # A API entra com este papel, só com leitura e escrita de dados (entrega 6 §3, P6); o migrator cria e dá as permissões.
+      Database__AppRole: mo_app
+      Database__AppPassword: mo-app-local-dev
     depends_on:
       postgres: { condition: service_healthy }
 
@@ -57,7 +60,7 @@ services:
     build: { context: ., target: api }
     environment:
       ASPNETCORE_ENVIRONMENT: Development
-      ConnectionStrings__Database: Host=postgres;Port=5432;Database=ecommerce;Username=ecommerce;Password=ecommerce
+      ConnectionStrings__Database: Host=postgres;Port=5432;Database=ecommerce;Username=mo_app;Password=mo-app-local-dev
       Email__Smtp__Host: mailpit
       Email__Smtp__Port: "1025"
       ImageStorage__ServiceUrl: http://rustfs:9000

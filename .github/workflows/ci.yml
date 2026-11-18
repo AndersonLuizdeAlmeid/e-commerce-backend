@@ -12,8 +12,21 @@ permissions:
 env:
   # Mesma versão e digest validados localmente; imagem em vez da trivy-action, que já teve tags sequestradas.
   TRIVY_IMAGE: aquasec/trivy:0.76.2@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb
+  # Imagem oficial fixada por digest, no lugar da gitleaks-action (que pede licença em organização).
+  GITLEAKS_IMAGE: ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
 
 jobs:
+  # Segredos no histórico inteiro (arquivo 17 §3, entrega 6.2). Falsos positivos conferidos ficam no .gitleaksignore.
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        run: |
+          docker run --rm -v "$PWD:/repo" "$GITLEAKS_IMAGE" git /repo --redact --no-banner --exit-code 1
+
   build-and-test:
     runs-on: ubuntu-latest
     steps:
@@ -33,7 +46,7 @@ jobs:
   # Em PR só constrói e verifica; na main publica no GHCR (públicas, I1) com SBOM e atestado de origem.
   images:
     runs-on: ubuntu-latest
-    needs: build-and-test
+    needs: [build-and-test, secrets]
     permissions:
       contents: read
       packages: write

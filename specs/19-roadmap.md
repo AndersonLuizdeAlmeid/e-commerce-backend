@@ -63,7 +63,7 @@ Entregas incrementais em **fatias verticais**: cada fase vai do banco à tela e 
 - Frontend: telas admin correspondentes.
 
 ## Fase 6 — Endurecimento e lançamento
-> 📝 **Planejada em 16/11/2026** em sete fatias (Outbox e alertas, segurança, LGPD e devolução, E2E e carga, produção e staging, Google, homologação); 6.1 a 6.4 começam sem o domínio. **6.1 implementada e validada em 16/11/2026** (testes, scripts por `psql` e API em container com Mailpit): [entregas/fase-6-endurecimento-e-lancamento.md](entregas/fase-6-endurecimento-e-lancamento.md).
+> 📝 **Planejada em 16/11/2026** em sete fatias (Outbox e alertas, segurança, LGPD e devolução, E2E e carga, produção e staging, Google, homologação); 6.1 a 6.4 começam sem o domínio. **6.1 implementada e validada em 16/11/2026** (testes, scripts por `psql` e API em container com Mailpit); **6.2 em 18/11/2026**, faltando o ZAP no staging: [entregas/fase-6-endurecimento-e-lancamento.md](entregas/fase-6-endurecimento-e-lancamento.md).
 - Revisão de segurança, testes de carga (k6), E2E dos fluxos críticos, LGPD.
 - **Homologação com pagamentos reais de baixo valor** em produção e estorno.
 - Search Console, Merchant Center, SPF/DKIM/DMARC, backup, alertas.

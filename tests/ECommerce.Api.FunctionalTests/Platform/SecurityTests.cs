@@ -93,5 +93,23 @@ public sealed class SecurityTests(ApiFactory factory) : FunctionalTest(factory)
         response.Headers.Contains("Server").ShouldBeFalse();
     }
 
+    [Fact, Trait("Spec", "ENT-6-ASVS-8.2.1")]
+    public async Task PersonalResponses_AreNeverCached_ButPublicCatalogIs()
+    {
+        using var customer = await AuthClient.RegisteredAsync(Factory, "maria@loja.teste");
+
+        var me = await customer.GetAsync("/api/v1/me/profile");
+        me.StatusCode.ShouldBe(HttpStatusCode.OK);
+        me.Headers.CacheControl!.NoStore.ShouldBeTrue();
+
+        // Erro de autenticação também não fica em cache.
+        var anonymous = await Client.GetAsync(new Uri("/api/v1/me/profile", UriKind.Relative), CancellationToken);
+        anonymous.Headers.CacheControl!.NoStore.ShouldBeTrue();
+
+        var catalog = await Client.GetAsync(new Uri("/api/v1/catalog/categories", UriKind.Relative), CancellationToken);
+        catalog.Headers.CacheControl!.Public.ShouldBeTrue();
+        catalog.Headers.CacheControl.NoStore.ShouldBeFalse();
+    }
+
     private static StringContent Json(string json) => new(json, System.Text.Encoding.UTF8, "application/json");
 }

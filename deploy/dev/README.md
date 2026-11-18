@@ -107,6 +107,21 @@ O `mo-restore` primeiro guarda o estado atual num backup novo, então para a API
 sem cache de páginas. Espera um deploy em andamento terminar. Se a API não voltar saudável, ele avisa qual arquivo
 restaurar para desfazer.
 
+## API com privilégio mínimo no banco (Fase 6.2)
+
+A API pode entrar no banco com o papel `mo_app`, que só lê e grava dados: nada de criar, alterar ou apagar tabela, nem
+de mexer no registro das migrations. Quem cria o papel e dá as permissões é o migrator, a cada deploy do backend. Para
+ligar numa VM que já existia, rode o bootstrap de novo (ele só acrescenta `DB_APP_USER` e `DB_APP_PASSWORD` ao `.env`,
+sem mexer nos outros segredos):
+
+```bash
+sudo UFW_ALLOW="80/tcp 443/tcp" bash /root/bootstrap.sh
+```
+
+Vale a partir do próximo deploy do backend (ou de `mo-compose up -d migrator api`). Sem as duas variáveis, tudo segue
+como antes, com a API usando o usuário dono. Para conferir:
+`docker exec mo-dev-postgres-1 psql -U ecommerce -tAc "SELECT usename, count(*) FROM pg_stat_activity WHERE usename IS NOT NULL GROUP BY 1"`.
+
 ## Trocar um segredo
 
 Os segredos ficam em `/opt/mo/.env` (só o root lê). Para trocar um, gere um valor novo com `openssl rand -hex 32`, edite
@@ -117,6 +132,7 @@ o arquivo e rode `mo-compose up -d`: o Compose recria só os serviços que usam 
 | `JWT_SIGNING_KEY` | Todo mundo é deslogado, inclusive do painel |
 | `REVALIDATE_SECRET`, `INTERNAL_KEY` | Nenhum: API e loja são recriadas juntas |
 | `ADMIN_PASSWORD` | Nenhum: só é usado para criar o admin quando não existe nenhum. Troque a senha pelo "Esqueci minha senha" (o e-mail chega no Mailpit) |
+| `DB_APP_PASSWORD` | Nenhum: o migrator troca a senha do `mo_app` no próximo `mo-compose up -d migrator api` |
 | `POSTGRES_PASSWORD` | Só vale na criação do banco. Troque primeiro no banco, depois no arquivo: `docker exec -it mo-dev-postgres-1 psql -U ecommerce -c '\password ecommerce'`, digite a senha nova, coloque a mesma no `.env` e rode `mo-compose up -d` |
 | Chave de deploy | `UFW_ALLOW="80/tcp 443/tcp" bash /root/bootstrap.sh --new-deploy-key` e atualizar `DEPLOY_SSH_KEY` nos dois repositórios. A antiga para de valer na hora |
 
