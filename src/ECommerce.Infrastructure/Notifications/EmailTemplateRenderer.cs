@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using ECommerce.Application.Inventory;
 using ECommerce.Application.Notifications;
 using ECommerce.Application.Ordering;
 using Microsoft.Extensions.Options;
@@ -10,7 +11,7 @@ namespace ECommerce.Infrastructure.Notifications;
 
 /// <summary>
 /// Templates em pt-BR, HTML simples com estilos inline + versão texto (arquivo 23 §4): conta (EM-01..03) e pedido
-/// (EM-04..EM-10, EM-12, EM-13).
+/// (EM-04..EM-10, EM-12, EM-13), estoque baixo (EM-11) e alerta técnico (EM-14).
 /// Todo valor vindo do usuário passa por HtmlEncode; tokens vão só no link.
 /// </summary>
 internal sealed class EmailTemplateRenderer(IOptions<EmailSettings> options)
@@ -116,8 +117,86 @@ internal sealed class EmailTemplateRenderer(IOptions<EmailSettings> options)
                 "Ver pedido",
                 "Se quiser as peças, é só fazer um novo pedido. Qualquer dúvida, fale com a MO."),
 
+            EmailTemplates.LowStockDigest => BuildLowStock(email, baseUrl),
+
+            EmailTemplates.OperationalAlert => BuildList(
+                email.To,
+                $"Alerta da loja: {Value(email.Model, "title")}",
+                Value(email.Model, "summary"),
+                JsonSerializer.Deserialize<List<string>>(Value(email.Model, "lines") is { Length: > 0 } alertLines ? alertLines : "[]") ?? [],
+                "Abrir o painel",
+                $"{baseUrl}/admin",
+                "Alerta automático. Enquanto a condição continuar, ele se repete no máximo a cada 6 horas."),
+
             _ => throw new InvalidOperationException($"Template de e-mail desconhecido: {email.Template}"),
         };
+    }
+
+    private EmailMessage BuildLowStock(SendEmail email, string baseUrl)
+    {
+        var lines = JsonSerializer.Deserialize<List<LowStockEmailLine>>(Value(email.Model, "items"), JsonSerializerOptions.Web) ?? [];
+        var count = int.TryParse(Value(email.Model, "count"), CultureInfo.InvariantCulture, out var parsed) ? parsed : lines.Count;
+        var rows = lines
+            .Select(line => string.Create(
+                CultureInfo.InvariantCulture,
+                $"{line.Name}{(line.Detail is null ? string.Empty : $" ({line.Detail})")} · SKU {line.Sku} · {(line.QuantityOnHand <= 0 ? "esgotada" : $"{line.QuantityOnHand} em estoque")} (limite {line.Threshold})"))
+            .ToList();
+        if (count > lines.Count)
+        {
+            rows.Add(string.Create(CultureInfo.InvariantCulture, $"…e mais {count - lines.Count} no painel."));
+        }
+
+        return BuildList(
+            email.To,
+            count == 1 ? "Estoque baixo: 1 peça para repor" : string.Create(CultureInfo.InvariantCulture, $"Estoque baixo: {count} peças para repor"),
+            "Estas peças à venda chegaram ao limite de estoque baixo:",
+            rows,
+            "Abrir o estoque",
+            $"{baseUrl}/admin/estoque",
+            "Resumo diário automático. Só chega quando há alguma peça no limite.");
+    }
+
+    /// <summary>E-mail com uma lista de linhas (EM-11 e EM-14).</summary>
+    private EmailMessage BuildList(string to, string subject, string intro, IReadOnlyList<string> lines, string buttonText, string url, string footnote)
+    {
+        var store = WebUtility.HtmlEncode(options.Value.FromName);
+        var items = new StringBuilder();
+        foreach (var line in lines)
+        {
+            items.Append(CultureInfo.InvariantCulture, $"""<li style="margin:0 0 6px">{WebUtility.HtmlEncode(line)}</li>""");
+        }
+
+        var html = $"""
+            <!doctype html>
+            <html lang="pt-BR">
+            <body style="margin:0;padding:24px;background:#fafaf9;font-family:Arial,Helvetica,sans-serif;color:#151515">
+              <table role="presentation" width="100%" style="max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #e7e5e4;border-radius:8px">
+                <tr><td style="padding:32px">
+                  <p style="margin:0 0 24px;font-size:18px;font-weight:bold">{store}</p>
+                  <h1 style="margin:0 0 16px;font-size:22px">{WebUtility.HtmlEncode(subject)}</h1>
+                  <p style="margin:0 0 16px;font-size:15px;line-height:1.5">{WebUtility.HtmlEncode(intro)}</p>
+                  <ul style="margin:0 0 24px;padding-left:20px;font-size:14px;line-height:1.5">{items}</ul>
+                  <p style="margin:0 0 24px"><a href="{WebUtility.HtmlEncode(url)}" style="display:inline-block;background:#1a1a17;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:6px;font-weight:bold">{WebUtility.HtmlEncode(buttonText)}</a></p>
+                  <p style="margin:16px 0 0;font-size:13px;color:#5f6368">{WebUtility.HtmlEncode(footnote)}</p>
+                </td></tr>
+              </table>
+            </body>
+            </html>
+            """;
+
+        var text = $"""
+            {subject}
+
+            {intro}
+
+            {string.Join('\n', lines.Select(line => $"- {line}"))}
+
+            {buttonText}: {url}
+
+            {footnote}
+            """;
+
+        return new EmailMessage(to, subject, html, text);
     }
 
     private EmailMessage Build(string to, string subject, string intro, string buttonText, string url, string footnote)

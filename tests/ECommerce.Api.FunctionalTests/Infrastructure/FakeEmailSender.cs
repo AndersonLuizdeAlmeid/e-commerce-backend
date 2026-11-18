@@ -17,8 +17,16 @@ public sealed partial class FakeEmailSender : IEmailSender
     /// <summary>Faz o próximo envio estourar o tempo, como o timeout do HttpClient (cancelado sem o host estar parando).</summary>
     public int TimeOutNext { get; set; }
 
-    public Task<string?> SendAsync(EmailMessage message, CancellationToken cancellationToken)
+    /// <summary>Envios para estes destinatários demoram o tempo dado: um provedor lento (entrega 6, C1).</summary>
+    public ConcurrentDictionary<string, TimeSpan> SlowRecipients { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public async Task<string?> SendAsync(EmailMessage message, CancellationToken cancellationToken)
     {
+        if (SlowRecipients.TryGetValue(message.To, out var delay))
+        {
+            await Task.Delay(delay, cancellationToken);
+        }
+
         if (TimeOutNext > 0)
         {
             TimeOutNext--;
@@ -32,7 +40,7 @@ public sealed partial class FakeEmailSender : IEmailSender
         }
 
         _sent.Enqueue(message);
-        return Task.FromResult<string?>($"fake-{Guid.NewGuid():N}");
+        return $"fake-{Guid.NewGuid():N}";
     }
 
     public void Clear()
@@ -40,6 +48,7 @@ public sealed partial class FakeEmailSender : IEmailSender
         _sent.Clear();
         FailNext = 0;
         TimeOutNext = 0;
+        SlowRecipients.Clear();
     }
 
     /// <summary>Espera o Outbox processar (ele roda em background a cada 200 ms nos testes).</summary>

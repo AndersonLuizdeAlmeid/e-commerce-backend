@@ -44,7 +44,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         _respawner = await Respawner.CreateAsync(connection, new RespawnerOptions
         {
             DbAdapter = DbAdapter.Postgres,
-            SchemasToInclude = ["catalog", "inventory", "carts", "shipping", "identity", "customers", "ordering", "payments", "messaging", "notifications"],
+            SchemasToInclude = ["catalog", "inventory", "carts", "shipping", "identity", "customers", "ordering", "payments", "messaging", "notifications", "ops"],
         });
     }
 
@@ -94,6 +94,8 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
     public const string StoreEmail = "loja@loja.teste";
 
+    public const string AlertEmail = "alertas@loja.teste";
+
     /// <summary>Plataforma de pagamento falsa registrada pela própria API com <c>Payments:Provider = Fake</c>.</summary>
     public FakePaymentGateway Payments => Services.GetRequiredService<FakePaymentGateway>();
 
@@ -118,6 +120,9 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         builder.UseSetting("Payments:Provider", "Fake");
         builder.UseSetting("Payments:MaxInstallments", "3");
         builder.UseSetting("Email:StoreAddress", StoreEmail);
+        // EM-11 e vigia de operação: os testes chamam quando precisam, sem a rodada de 5 em 5 minutos no meio.
+        builder.UseSetting("Ops:ScheduledJobsEnabled", "false");
+        builder.UseSetting("Ops:AlertEmail", AlertEmail);
 
         builder.ConfigureTestServices(services =>
         {

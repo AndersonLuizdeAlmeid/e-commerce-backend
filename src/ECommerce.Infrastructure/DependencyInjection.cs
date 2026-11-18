@@ -50,7 +50,7 @@ public static class DependencyInjection
         AddPersistence(services);
         AddCaching(services, configuration);
         AddAuthentication(services, configuration, environment);
-        AddMessaging(services, configuration);
+        AddMessaging(services, configuration, environment);
         services.AddShipping(configuration, environment);
         services.AddPayments(configuration, environment);
         services.AddSingleton(sp => new ECommerce.Application.Payments.PaymentOptions
@@ -133,7 +133,7 @@ public static class DependencyInjection
         services.AddSingleton<ISecureTokenFactory, SecureTokenFactory>();
     }
 
-    private static void AddMessaging(IServiceCollection services, IConfiguration configuration)
+    private static void AddMessaging(IServiceCollection services, IConfiguration configuration, IHostEnvironment environment)
     {
         services.AddOptions<OutboxSettings>().Bind(configuration.GetSection(OutboxSettings.SectionName));
 
@@ -156,6 +156,17 @@ public static class DependencyInjection
         services.AddHostedService<MaintenanceJob>();
         services.AddHostedService<OrderJobs>();
 
+        // EM-11 e vigia de operação com EM-14 (entrega 6 §3, P3 e P4). Em produção, alerta sem destinatário é alerta perdido.
+        services.AddOptions<OpsSettings>()
+            .Bind(configuration.GetSection(OpsSettings.SectionName))
+            .Validate(settings => settings.AlertIntervalHours >= 1 && settings.OutboxDelayMinutes >= 1, "Ops: intervalos precisam ser positivos.")
+            .Validate(
+                settings => !environment.IsProduction() || !string.IsNullOrWhiteSpace(settings.AlertEmail),
+                "Ops:AlertEmail é obrigatório em Production.")
+            .ValidateOnStart();
+        services.AddSingleton<OpsMonitor>();
+        services.AddHostedService<OperationsJobs>();
+
         var emailSection = configuration.GetSection(EmailSettings.SectionName);
         services.AddOptions<EmailSettings>()
             .Bind(emailSection)
@@ -165,6 +176,9 @@ public static class DependencyInjection
             .Validate(
                 settings => settings.Provider != "Resend" || !string.IsNullOrWhiteSpace(settings.Resend.ApiKey),
                 "Email:Resend:ApiKey é obrigatório com o provedor Resend.")
+            .Validate(
+                settings => !environment.IsProduction() || !string.IsNullOrWhiteSpace(settings.StoreAddress),
+                "Email:StoreAddress é obrigatório em Production: é ele que recebe o pedido pago e o estoque baixo.")
             .ValidateOnStart();
         services.AddSingleton<EmailTemplateRenderer>();
 

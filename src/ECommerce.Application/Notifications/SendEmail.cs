@@ -19,6 +19,12 @@ public static class EmailTemplates
 
     /// <summary>Aviso à loja de pagamento que precisa de atenção (estorno, contestação).</summary>
     public const string PaymentNeedsAttention = "EM-12";
+
+    /// <summary>Resumo diário de estoque baixo para a loja (entrega 6 §3, P4).</summary>
+    public const string LowStockDigest = "EM-11";
+
+    /// <summary>Alerta técnico para quem opera a loja; sai direto pelo provedor, sem Outbox (entrega 6 §3, P3).</summary>
+    public const string OperationalAlert = "EM-14";
 }
 
 /// <summary>

@@ -12,6 +12,7 @@ Com e-mails, webhooks de pagamento, revalidação de páginas (SEO) e cancelamen
 - Handlers **idempotentes** (podem ser executados mais de uma vez).
 - Usos: envio de e-mails (arquivo 23), revalidação do frontend (arquivo 24), estornos (arquivo 21), notificações ao admin.
 - *Implementado na Fase 2A* (antecipado da Fase 4): processador com lote de 20, polling de 5 s, backoff 30 s · 2^(n-1) e `failed_at` na 5ª falha. Dados sensíveis do payload (tokens dos links) ficam numa chave `secrets`, apagada (`payload - 'secrets'`) quando a mensagem é processada.
+- *Revisto na Fase 6.1* (entrega 6 §3, P1): a mensagem é **reservada** numa instrução curta (`locked_until` + `lock_token`, 5 min) e processada **fora de transação**, em até 4 vagas; uma vaga que libera já pega a próxima. Reserva vencida (API caiu no meio) volta para a fila; a marcação só vale para quem tem o token da reserva.
 
 ```sql
 CREATE TABLE messaging.outbox_messages (
@@ -36,11 +37,12 @@ CREATE INDEX ix_outbox_pending ON messaging.outbox_messages(next_attempt_at) WHE
 | Lembrete de pagamento | a cada 15 min | Pedidos com 24 h sem pagamento e lembrete não enviado → EM-05. |
 | Reconciliação de pagamentos | a cada 15 min | Consulta na plataforma pagamentos `Pending` sem webhook há > 10 min. |
 | Limpeza de tokens | diário | Refresh tokens e tokens de senha expirados. |
-| Alerta de estoque baixo | diário | EM-11 para o admin. |
+| Alerta de estoque baixo | diário, 8h de São Paulo | EM-11 para o admin, só com variação no limiar. Uma vez por dia garantido pela marca em `ops.job_marks` (Fase 6.1). |
+| Vigia de operação | a cada 5 min | EM-14 direto pelo provedor (sinais do §3 e do arquivo 14 §6), no máximo a cada 6 h por condição (Fase 6.1). |
 | Rastreio de envios (evolução) | a cada 2 h | Atualiza status de entrega pelo rastreio dos Correios. |
 
 - Implementação: `BackgroundService` + `PeriodicTimer`; cada execução pega trabalho com `FOR UPDATE SKIP LOCKED` ou **advisory lock** (`pg_try_advisory_lock`) para não rodar em duplicidade com várias instâncias.
-- Alternativa se a quantidade de jobs crescer: **Hangfire** com storage PostgreSQL (painel de jobs, retries) — avaliar na Fase 6.
+- Alternativa se a quantidade de jobs crescer: **Hangfire** com storage PostgreSQL (painel de jobs, retries). *Avaliado na Fase 6: não entra* (entrega 6 §3, P2).
 - Corrida pagamento × cancelamento: o cancelamento usa `UPDATE ... WHERE status = 'PendingPayment'` (concorrência otimista); se o webhook de aprovação chegar depois do cancelamento → estorno automático (RN-101, arquivo 21).
 
 ## 3. Observabilidade
