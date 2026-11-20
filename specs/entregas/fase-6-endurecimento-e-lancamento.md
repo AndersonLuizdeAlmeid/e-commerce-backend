@@ -97,7 +97,7 @@ Cada script entra no `database/gerar-scripts.sh`: a V0021 já está em `database
 | `GET /me/data-export` | `data-export` (3/dia) | 6.3 |
 | `DELETE /me` `{ password }` | `auth-strict` | 6.3 |
 | `POST /admin/orders/{id}/return` `{ note }` | `admin-write` | 6.3 |
-| `GET /feeds/google-merchant.xml` | — | 6.6 |
+| `GET /feeds/google-merchant.xml` (API em `/api/v1/feeds/...`; a loja serve no próprio domínio) | `public-read` | 6.6 |
 
 ### 4.4 Frontend
 
@@ -205,7 +205,7 @@ Primeiro só build (A), depois banco (B) e por último execução (C). **A fase 
 | 6.3 — LGPD, páginas legais e devolução | ✅ Implementada e validada em 20/11/2026. Os textos de `/privacidade`, `/termos` e `/trocas-e-devolucoes` são rascunho: avisam isso no topo até a identificação da loja estar completa, e marcam em vermelho os pontos que a MO precisa decidir (§6, itens 4 e 5) |
 | 6.4 — E2E e carga | Planejada; k6 depende da 6.5 |
 | 6.5 — Produção e staging | Planejada; depende do domínio e da VM |
-| 6.6 — Google | Planejada; contas dependem da 6.5 |
+| 6.6 — Google | 🟡 Feed implementado e validado em 20/11/2026. Falta configurar as contas (Search Console e Merchant Center), que dependem do domínio (6.5), e conferir C19 e C20 |
 | 6.7 — Homologação e lançamento | Planejada |
 
 ### Ajustes ao plano feitos na 6.1
@@ -312,6 +312,34 @@ Os testes já cobriam IDOR, autorização do `/admin`, rotas anônimas, CORS, ra
 | C10 | 🟡 Rodapé com os links legais em todas as páginas da loja, sem rolagem lateral em 375 px. ⏳ **Dados da loja**: dependem do §6 item 4; enquanto faltarem, o rodapé mostra só "MO Acessórios" |
 
 **O que falta para fechar a 6.3 de vez (não é código):** razão social, CNPJ, endereço, e-mail e telefone de atendimento da loja; as decisões marcadas nas páginas (envio da devolução, prazo e frete da troca, cobertura da garantia do banho, parcelamento); e a revisão jurídica dos três textos.
+
+### Feed do Merchant Center (6.6, 20/11/2026)
+
+- **Onde**:
+  - A API monta o XML em `GET /api/v1/feeds/google-merchant.xml` (RSS 2.0 com `g:`).
+  - A loja serve o mesmo conteúdo em `/feeds/google-merchant.xml`, que é o endereço a cadastrar no Merchant Center, no domínio verificado.
+  - A rota da loja é dinâmica, porque o build da imagem roda contra a API falsa. Ela guarda a resposta por 1 h com as tags `products`, `categories` e `collections`, e cai junto com a revalidação do catálogo.
+  - Se a API falhar, a loja responde `503`, não um feed vazio, para as peças não saírem do Google.
+- **O que entra**:
+  - Uma entrada por variação ativa de peça ativa, em categoria ativa e com foto. O Google recusa item sem foto: a peça entra quando ganhar uma.
+  - `g:id` é o SKU, e `item_group_id` é o id da peça.
+  - O título é "peça - cor - tamanho", e o link é o canônico com `?cor=&tamanho=`.
+  - A foto é a da cor primeiro e depois as gerais (até 10 adicionais).
+  - O preço é o da variação, ou o da peça quando a variação não tem.
+  - `product_type` é "categoria > subcategoria".
+- **Esgotada continua no feed** como `out_of_stock`, em vez de sair. Assim o Google mantém o histórico do item, e ele volta sozinho quando o estoque volta.
+- **GTIN** só com o dígito verificador certo (8, 12, 13 ou 14 dígitos); sem ele, `identifier_exists=no`. Marca "MO Acessórios", `condition=new`, `age_group=adult`.
+- **Gênero**: `female` por padrão e `male` para peças da coleção `eles`. É exigido pelo Google para acessórios no Brasil e é ajustável em `MerchantFeed:DefaultGender` e `MerchantFeed:MaleCollections`.
+- **Links**: usam `MerchantFeed:StoreUrl`, ou, sem ele, o `Email:FrontendBaseUrl` que os e-mails já usam. Em produção é o domínio da loja.
+- **Cache na API**: 1 h, apagado por qualquer escrita de peça, estoque, categoria ou coleção.
+
+| Item | Resultado |
+|------|-----------|
+| A1/A2 | ✅ `dotnet build` sem aviso; lint, typecheck, **224 testes** da loja (2 novos da rota) e build de produção, com `/feeds/google-merchant.xml` dinâmica |
+| Testes | ✅ domínio 222, aplicação **47** (11 novos: GTIN e XML), arquitetura 8, funcionais **340 de 340**: 3 novos (`MerchantFeedTests`: variações agrupadas com GTIN, preço, disponibilidade e link; peça inativa, rascunho e sem foto fora; feed vazio público), com a variação desativada saindo na leitura seguinte; a rota entrou na lista de rotas anônimas do teste de segurança |
+| Container | ✅ API em container com o banco de desenvolvimento: 40 itens, o mesmo número de variações elegíveis contadas por SQL; XML válido; `application/xml` e `Cache-Control: public, max-age=3600`. Os 24 códigos de barras do banco de exemplo estão em peças inativas, então nenhum GTIN aparece ali, como deveria |
+| Loja | ✅ build de produção contra a API em container: a loja serve o mesmo XML, byte a byte. Ao tirar uma peça da loja pelo painel, o feed da loja cai de 40 para 34 itens em 3 s pela revalidação, e volta para 40 em 4 s ao reativar |
+| C19, C20 | ⏳ Dependem das contas do Google e do domínio (6.5) |
 
 ### Riscos
 

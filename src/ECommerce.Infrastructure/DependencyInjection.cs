@@ -62,6 +62,20 @@ public static class DependencyInjection
             TrackingUrlTemplate = configuration["Ordering:TrackingUrlTemplate"],
         });
 
+        // Feed do Merchant Center (entrega 6 fatia 6.6). Sem MerchantFeed:StoreUrl, usa o endereço da loja dos e-mails.
+        var feed = configuration.GetSection("MerchantFeed").Get<ECommerce.Application.Catalog.GetMerchantFeed.MerchantFeedOptions>()
+            ?? new ECommerce.Application.Catalog.GetMerchantFeed.MerchantFeedOptions();
+        services.AddSingleton(string.IsNullOrWhiteSpace(configuration["MerchantFeed:StoreUrl"]) && configuration["Email:FrontendBaseUrl"] is { Length: > 0 } store
+            ? new ECommerce.Application.Catalog.GetMerchantFeed.MerchantFeedOptions
+            {
+                StoreUrl = store,
+                StoreName = feed.StoreName,
+                Brand = feed.Brand,
+                DefaultGender = feed.DefaultGender,
+                MaleCollections = feed.MaleCollections,
+            }
+            : feed);
+
         services.AddHealthChecks()
             .AddCheck<DatabaseHealthCheck>("postgres", tags: ["ready"]);
 

@@ -24,6 +24,8 @@ public sealed class SecurityTests(ApiFactory factory) : FunctionalTest(factory)
         "GET /api/v1/catalog/products/{slug}",
         "GET /api/v1/catalog/showcase",
         "GET /api/v1/catalog/sitemap",
+        // O Merchant Center busca o feed sem login (SEO-14, entrega 6.6).
+        "GET /api/v1/feeds/google-merchant.xml",
         "* /health/live",
         "* /health/ready",
         "GET /openapi/{documentName}.json",
