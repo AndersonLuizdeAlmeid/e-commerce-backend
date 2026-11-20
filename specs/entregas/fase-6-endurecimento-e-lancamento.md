@@ -97,7 +97,7 @@ Cada script entra no `database/gerar-scripts.sh`: a V0021 já está em `database
 | `GET /me/data-export` | `data-export` (3/dia) | 6.3 |
 | `DELETE /me` `{ password }` | `auth-strict` | 6.3 |
 | `POST /admin/orders/{id}/return` `{ note }` | `admin-write` | 6.3 |
-| `GET /feeds/google-merchant.xml` | — | 6.6 |
+| `GET /feeds/google-merchant.xml` (API em `/api/v1/feeds/...`; a loja serve no próprio domínio) | `public-read` | 6.6 |
 
 ### 4.4 Frontend
 
@@ -203,9 +203,9 @@ Primeiro só build (A), depois banco (B) e por último execução (C). **A fase 
 | 6.1 — Outbox, jobs e alertas internos | ✅ Implementada e validada em 16/11/2026. As métricas OTLP do §4.2 ficaram para a 6.5, junto com o Grafana Cloud |
 | 6.2 — Segurança | ✅ Implementada e validada em 18/11/2026. Falta a varredura ZAP (C6), que depende do staging, e conferir a CSP com o cartão no sandbox (C5). Duas decisões de senha e login esperam você (abaixo) |
 | 6.3 — LGPD, páginas legais e devolução | ✅ Implementada e validada em 20/11/2026. Os textos de `/privacidade`, `/termos` e `/trocas-e-devolucoes` são rascunho: avisam isso no topo até a identificação da loja estar completa, e marcam em vermelho os pontos que a MO precisa decidir (§6, itens 4 e 5) |
-| 6.4 — E2E e carga | Planejada; k6 depende da 6.5 |
+| 6.4 — E2E e carga | 🟡 Implementada e validada localmente em 20/11/2026: 5 fluxos Playwright com axe (job `e2e` no CI da loja) e cenários k6 prontos. Falta o job rodar pela primeira vez no GitHub (depende da tag `main` das imagens do backend, publicada no próximo push na `main`) e o k6 de verdade na VM de produção (C12, 6.5) |
 | 6.5 — Produção e staging | Planejada; depende do domínio e da VM |
-| 6.6 — Google | Planejada; contas dependem da 6.5 |
+| 6.6 — Google | 🟡 Feed implementado e validado em 20/11/2026. Falta configurar as contas (Search Console e Merchant Center), que dependem do domínio (6.5), e conferir C19 e C20 |
 | 6.7 — Homologação e lançamento | Planejada |
 
 ### Ajustes ao plano feitos na 6.1
@@ -312,6 +312,73 @@ Os testes já cobriam IDOR, autorização do `/admin`, rotas anônimas, CORS, ra
 | C10 | 🟡 Rodapé com os links legais em todas as páginas da loja, sem rolagem lateral em 375 px. ⏳ **Dados da loja**: dependem do §6 item 4; enquanto faltarem, o rodapé mostra só "MO Acessórios" |
 
 **O que falta para fechar a 6.3 de vez (não é código):** razão social, CNPJ, endereço, e-mail e telefone de atendimento da loja; as decisões marcadas nas páginas (envio da devolução, prazo e frete da troca, cobertura da garantia do banho, parcelamento); e a revisão jurídica dos três textos.
+
+### Feed do Merchant Center (6.6, 20/11/2026)
+
+- **Onde**:
+  - A API monta o XML em `GET /api/v1/feeds/google-merchant.xml` (RSS 2.0 com `g:`).
+  - A loja serve o mesmo conteúdo em `/feeds/google-merchant.xml`, que é o endereço a cadastrar no Merchant Center, no domínio verificado.
+  - A rota da loja é dinâmica, porque o build da imagem roda contra a API falsa. Ela guarda a resposta por 1 h com as tags `products`, `categories` e `collections`, e cai junto com a revalidação do catálogo.
+  - Se a API falhar, a loja responde `503`, não um feed vazio, para as peças não saírem do Google.
+- **O que entra**:
+  - Uma entrada por variação ativa de peça ativa, em categoria ativa e com foto. O Google recusa item sem foto: a peça entra quando ganhar uma.
+  - `g:id` é o SKU, e `item_group_id` é o id da peça.
+  - O título é "peça - cor - tamanho", e o link é o canônico com `?cor=&tamanho=`.
+  - A foto é a da cor primeiro e depois as gerais (até 10 adicionais).
+  - O preço é o da variação, ou o da peça quando a variação não tem.
+  - `product_type` é "categoria > subcategoria".
+- **Esgotada continua no feed** como `out_of_stock`, em vez de sair. Assim o Google mantém o histórico do item, e ele volta sozinho quando o estoque volta.
+- **GTIN** só com o dígito verificador certo (8, 12, 13 ou 14 dígitos); sem ele, `identifier_exists=no`. Marca "MO Acessórios", `condition=new`, `age_group=adult`.
+- **Gênero**: `female` por padrão e `male` para peças da coleção `eles`. É exigido pelo Google para acessórios no Brasil e é ajustável em `MerchantFeed:DefaultGender` e `MerchantFeed:MaleCollections`.
+- **Links**: usam `MerchantFeed:StoreUrl`, ou, sem ele, o `Email:FrontendBaseUrl` que os e-mails já usam. Em produção é o domínio da loja.
+- **Cache na API**: 1 h, apagado por qualquer escrita de peça, estoque, categoria ou coleção.
+
+| Item | Resultado |
+|------|-----------|
+| A1/A2 | ✅ `dotnet build` sem aviso; lint, typecheck, **224 testes** da loja (2 novos da rota) e build de produção, com `/feeds/google-merchant.xml` dinâmica |
+| Testes | ✅ domínio 222, aplicação **47** (11 novos: GTIN e XML), arquitetura 8, funcionais **340 de 340**: 3 novos (`MerchantFeedTests`: variações agrupadas com GTIN, preço, disponibilidade e link; peça inativa, rascunho e sem foto fora; feed vazio público), com a variação desativada saindo na leitura seguinte; a rota entrou na lista de rotas anônimas do teste de segurança |
+| Container | ✅ API em container com o banco de desenvolvimento: 40 itens, o mesmo número de variações elegíveis contadas por SQL; XML válido; `application/xml` e `Cache-Control: public, max-age=3600`. Os 24 códigos de barras do banco de exemplo estão em peças inativas, então nenhum GTIN aparece ali, como deveria |
+| Loja | ✅ build de produção contra a API em container: a loja serve o mesmo XML, byte a byte. Ao tirar uma peça da loja pelo painel, o feed da loja cai de 40 para 34 itens em 3 s pela revalidação, e volta para 40 em 4 s ao reativar |
+| C19, C20 | ⏳ Dependem das contas do Google e do domínio (6.5) |
+
+### E2E e carga (6.4, 20/11/2026)
+
+- **Onde**: os testes ficam em `e-commerce-frontend/e2e/`, com instruções no README. A pilha `e2e/compose.yml` sobe Postgres sem volume, com o seed de desenvolvimento, Mailpit, migrator e API das imagens, com pagamento e frete falsos. A loja roda com o build de produção na porta 3100.
+- **Os 5 fluxos**:
+  - compra com PIX, com o cadastro e a confirmação pelo link do Mailpit;
+  - compra com cartão de teste;
+  - cancelamento pela cliente, com o e-mail;
+  - painel do pagamento à devolução, com os e-mails EM-08, EM-09 e EM-13;
+  - busca → categoria → produto → sacola em 375 px, sem rolagem lateral.
+- **axe** roda em cada página visitada (WCAG 2.1 A e AA) e falha em violação séria ou crítica. **Nenhuma apareceu**: cadastro, conta, confirmação, produto, sacola, os três passos do checkout, pagamento PIX e cartão, Meus pedidos, painel e a vitrine no celular.
+- **CI da loja**: novo job `e2e` com as imagens `:main` da API e do migrator, ou outras pelas variáveis `E2E_API_IMAGE` e `E2E_MIGRATOR_IMAGE`. A publicação da imagem da loja passa a esperar o E2E verde. Se o job falhar, o relatório, os traces e o log da pilha ficam como artefato por 7 dias.
+- **CI do backend**: as imagens da API e do migrator ganham também a tag móvel `main`, além da `sha-…`, só para o E2E da loja. O deploy continua pelo digest.
+- **Ajustes de teste**:
+  - o link de confirmação de e-mail pede um clique, e o teste clica como a cliente;
+  - no celular, o "Adicionar à sacola" existe duas vezes (o fixo no rodapé e o do conteúdo), e o teste usa o visível;
+  - o passo de endereço do checkout foi feito determinístico depois de uma corrida no próprio teste.
+- **k6** (`e-commerce-backend/tests/load/`): vitrine a 100 req/s, frete a 10/s, checkout com 20 clientes e disputa pela última unidade. As metas do RNF-001 são limites do script, que sai com erro se alguma falhar. O README explica a rodada na VM (P15): Mailpit como SMTP e limites por IP altos só durante o teste, e o banco recriado depois.
+
+| Item | Resultado |
+|------|-----------|
+| A2 | ✅ lint, typecheck (inclui `e2e/`), 224 testes da loja; `actionlint` sem erro nos workflows dos dois repositórios; `npm audit --audit-level=high` sem achado com o Playwright e o axe |
+| C11 (local) | ✅ **5 de 5** fluxos verdes, duas rodadas seguidas no mesmo banco (1,3 min cada), contra a API em container gerada do backend local e o build de produção da loja; nenhuma violação séria do axe |
+| C11 (CI) | ⏳ Primeira rodada no GitHub depois do merge do backend na `main` (tag `main` das imagens) |
+| k6 (rodada curta) | ✅ Contra a pilha de E2E: todos os limites verdes. A disputa criou **1** pedido e recusou os outros com `409 Ordering.OutOfStock`, e o saldo terminou em 0 |
+| C12 | ⏳ Na VM de produção (6.5) |
+
+### Preparo da 6.5 feito sem o domínio (20/11/2026)
+
+- **Configuração de produção** (§4.2), que completa o que a 6.1 começou:
+  - Em `Production`, a API recusa subir com a credencial de teste do Mercado Pago (`TEST-...`), sem a assinatura do webhook ou com o Melhor Envio apontando para o sandbox.
+  - Fora de Development, os provedores falsos e a chave JWT de desenvolvimento já eram recusados.
+  - O staging (`Staging`) continua aceitando credencial de teste e sandbox.
+  - Testes novos: `PaymentConfigurationTests` (4) e um caso a mais em `ShippingConfigurationTests`.
+- **Staging fechado para buscadores** (P13, C18), ligado por `NEXT_PUBLIC_ENV=staging` no build:
+  - `robots.txt` com `Disallow: /` e sem sitemap;
+  - `X-Robots-Tag: noindex, nofollow` em toda resposta, inclusive fotos e feed.
+  - Conferido com um build de staging e um padrão, que não mudou. O Dockerfile da loja já recebe o `ARG`.
+- **Suíte completa**: domínio 222, aplicação 47, arquitetura 8, funcionais 344 de 345. A única falha foi de novo o `MercadoPagoGatewayTests.Get_MapsTheStatus(charged_back)`, o timeout do WireMock com a suíte inteira já registrado na 6.1; sozinho, o adaptador passa nos 16. Na loja, 228 testes.
 
 ### Riscos
 

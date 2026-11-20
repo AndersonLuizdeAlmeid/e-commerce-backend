@@ -25,8 +25,7 @@ public sealed class ShippingConfigurationTests
 
     [Theory, Trait("Spec", "22-CONFIG")]
     [InlineData("Production")]
-    [InlineData("Staging")]
-    public void FakeProvider_OutsideDevelopment_IsRefused(string environment)
+    public void FakeProvider_InProduction_IsRefused(string environment)
     {
         Should.Throw<OptionsValidationException>(() => Resolve(environment, ("Shipping:Provider", "Fake")));
     }
@@ -34,7 +33,8 @@ public sealed class ShippingConfigurationTests
     [Theory, Trait("Spec", "22-CONFIG")]
     [InlineData("Development")]
     [InlineData("Testing")]
-    public void FakeProvider_InDevelopment_IsAccepted(string environment)
+    [InlineData("Staging")]
+    public void FakeProvider_OutsideProduction_IsAccepted(string environment)
     {
         Resolve(environment, ("Shipping:Provider", "Fake")).Provider.ShouldBe("Fake");
     }
@@ -49,7 +49,12 @@ public sealed class ShippingConfigurationTests
     [Fact, Trait("Spec", "22-CONFIG")]
     public void RealProvider_Complete_IsAccepted()
     {
-        var settings = Resolve("Production", ("Shipping:Provider", "MelhorEnvio"), ("Shipping:MelhorEnvio:Token", "t"), ("Shipping:MelhorEnvio:UserAgent", "Loja (contato@loja.teste)"));
+        var settings = Resolve(
+            "Production",
+            ("Shipping:Provider", "MelhorEnvio"),
+            ("Shipping:MelhorEnvio:Token", "t"),
+            ("Shipping:MelhorEnvio:UserAgent", "Loja (contato@loja.teste)"),
+            ("Shipping:MelhorEnvio:BaseUrl", "https://melhorenvio.com.br/"));
 
         settings.MelhorEnvio.Token.ShouldBe("t");
     }
@@ -58,5 +63,14 @@ public sealed class ShippingConfigurationTests
     public void UnknownProvider_IsRefused()
     {
         Should.Throw<OptionsValidationException>(() => Resolve("Development", ("Shipping:Provider", "Correios")));
+    }
+
+    [Fact, Trait("Spec", "ENT6-4.2")]
+    public void Sandbox_InProduction_IsRefused_ButStagingKeepsIt()
+    {
+        (string, string)[] sandbox = [("Shipping:Provider", "MelhorEnvio"), ("Shipping:MelhorEnvio:Token", "t"), ("Shipping:MelhorEnvio:UserAgent", "Loja (contato@loja.teste)")];
+
+        Should.Throw<OptionsValidationException>(() => Resolve("Production", sandbox)).Message.ShouldContain("sandbox");
+        Resolve("Staging", sandbox).MelhorEnvio.BaseUrl.ShouldContain("sandbox");
     }
 }

@@ -16,6 +16,7 @@ public static class CatalogCache
     public const string SitemapKey = "catalog:sitemap";
     public const string CollectionsKey = "catalog:collections";
     public const string ShowcaseKey = "catalog:showcase";
+    public const string MerchantFeedKey = "catalog:merchant-feed";
 
     internal static readonly CachePolicy Categories = new(TimeSpan.FromMinutes(30), [CategoriesTag]);
     internal static readonly CachePolicy ProductList = new(TimeSpan.FromMinutes(2), [ProductsTag]);
@@ -26,6 +27,9 @@ public static class CatalogCache
     // TTL curto: é o que faz a ocasião entrar e sair na virada do dia, sem job (RF-025 CA3).
     internal static readonly CachePolicy Showcase = new(TimeSpan.FromMinutes(5), [ShowcaseTag, ProductsTag, CategoriesTag]);
     internal static readonly CachePolicy Product = new(TimeSpan.FromMinutes(10), [ProductsTag]);
+
+    /// <summary>Feed do Merchant Center: 1 h, e cai junto com qualquer mudança de peça, estoque, categoria ou coleção.</summary>
+    internal static readonly CachePolicy MerchantFeed = new(TimeSpan.FromHours(1), [ProductsTag, CategoriesTag, CollectionsTag]);
 
     internal static string CategoryKey(string slug) => $"catalog:category:{slug}";
     internal static string ProductKey(string slug) => $"catalog:product:{slug}";

@@ -67,7 +67,7 @@ public sealed class ProfileTests(ApiFactory factory) : FunctionalTest(factory)
     {
         await SeedAdminAsync("admin@loja.teste");
         using var admin = new AuthClient(Factory);
-        (await admin.LoginAsync("admin@loja.teste", "Admin@12345")).EnsureSuccessStatusCode();
+        (await admin.LoginAsync("admin@loja.teste", "Admin-Loja-12345")).EnsureSuccessStatusCode();
 
         (await admin.GetAsync("/api/v1/me/profile")).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
         (await admin.GetAsync("/api/v1/auth/me")).StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -77,7 +77,7 @@ public sealed class ProfileTests(ApiFactory factory) : FunctionalTest(factory)
     {
         await using var scope = Factory.Services.CreateAsyncScope();
         var handler = scope.ServiceProvider.GetRequiredService<ICommandHandler<SeedInitialAdminCommand, bool>>();
-        var result = await handler.Handle(new SeedInitialAdminCommand(email, "Admin@12345"), CancellationToken);
+        var result = await handler.Handle(new SeedInitialAdminCommand(email, "Admin-Loja-12345"), CancellationToken);
         result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : null);
         return result.Value;
     }

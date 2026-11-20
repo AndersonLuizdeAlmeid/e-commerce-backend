@@ -72,4 +72,4 @@ Objetivos, escopo e checklist de aceite de cada fase ficam em [`specs/entregas/`
 |-----|---------|
 | http://localhost:8025 | Mailpit: caixa de entrada dos e-mails de desenvolvimento (`docker compose up -d mailpit`) |
 
-Admin de desenvolvimento, criado pela API na primeira subida: `admin@loja.local` / `Admin@12345`.
+Admin de desenvolvimento, criado pela API na primeira subida: `admin@loja.local` / `Admin-Loja-12345`.

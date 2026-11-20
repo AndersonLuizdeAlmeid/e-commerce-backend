@@ -7,7 +7,7 @@ namespace ECommerce.Application.UnitTests.Identity;
 public sealed class IdentityValidatorTests
 {
     private static RegisterCommand ValidRegister() =>
-        new("Maria da Silva", "maria@loja.teste", "Senha@123", "(11) 98765-4321", null, null);
+        new("Maria da Silva", "maria@loja.teste", "Joia-Preferida-123", "(11) 98765-4321", null, null);
 
     [Fact]
     public void Register_WithValidData_IsValid()
@@ -15,16 +15,32 @@ public sealed class IdentityValidatorTests
         new RegisterValidator().Validate(ValidRegister()).IsValid.ShouldBeTrue();
     }
 
-    [Theory, Trait("Spec", "RF-001-CA3")]
+    // Entrega 6, S4 (ASVS V2.1): curta demais ou comum demais, mesmo com maiúscula, número e símbolo.
+    [Theory, Trait("Spec", "ENT6-S4")]
     [InlineData("Ab1")]
-    [InlineData("senhasemnumero")]
-    [InlineData("SENHA12345")]
-    [InlineData("senha12345")]
+    [InlineData("Senha@12345")]
+    [InlineData("senha12345678")]
+    [InlineData("Password@2026")]
+    [InlineData("123456789012")]
+    [InlineData("qwertyuiopas")]
+    [InlineData("aaaaaaaaaaaa")]
+    [InlineData("Minha-Senha-2026!")]
+    [InlineData("Admin@123456789")]
     public void Register_WithWeakPassword_FailsOnPassword(string password)
     {
         var result = new RegisterValidator().Validate(ValidRegister() with { Password = password });
 
         result.Errors.Select(e => e.PropertyName).ShouldContain(nameof(RegisterCommand.Password));
+    }
+
+    // Sem regra de composição: frase só com minúsculas, com acento ou com espaço vale.
+    [Theory, Trait("Spec", "ENT6-S4")]
+    [InlineData("minha joia preferida da loja")]
+    [InlineData("anéis de prata no domingo")]
+    [InlineData("cafezinhoderua")]
+    public void Register_WithLongPassphrase_IsValid(string password)
+    {
+        new RegisterValidator().Validate(ValidRegister() with { Password = password }).IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -56,7 +72,7 @@ public sealed class IdentityValidatorTests
     [Fact]
     public void ChangePassword_WhenNewEqualsCurrent_Fails()
     {
-        var result = new ChangePasswordValidator().Validate(new ChangePasswordCommand(UserId.New(), "Senha@123", "Senha@123", null));
+        var result = new ChangePasswordValidator().Validate(new ChangePasswordCommand(UserId.New(), "Joia-Preferida-123", "Joia-Preferida-123", null));
 
         result.Errors.Select(e => e.PropertyName).ShouldContain(nameof(ChangePasswordCommand.NewPassword));
     }

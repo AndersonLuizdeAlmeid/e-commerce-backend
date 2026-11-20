@@ -2,6 +2,12 @@
 #   docker compose --env-file /opt/mo/.env --env-file /opt/mo/state/images.env -f compose.yml up -d
 # /opt/mo/.env guarda os segredos, gerados na própria VM; images.env, os digests da versão no ar.
 # A VM é compartilhada com outras aplicações: portas só em 127.0.0.1, na faixa 31xx, e nomes com o prefixo mo-dev.
+#
+# MO_ENVIRONMENT no .env escolhe o modo (README, "Ambiente de testes da equipe"):
+#   Development (padrão)  dados de exemplo, e-mails no Mailpit, só pelo Tailscale
+#   Staging               ambiente de testes da equipe: banco sem dados de exemplo, e-mail de verdade pelo Resend e
+#                         endereço público pelo nginx da VM. Pagamento e frete continuam simulados até as credenciais
+#                         de sandbox entrarem no .env.
 name: mo-dev
 
 x-base: &base
@@ -79,7 +85,8 @@ services:
     cap_drop: [ALL]
     read_only: true
     environment:
-      DOTNET_ENVIRONMENT: Development
+      # Os dados de exemplo (peças, categorias, fotos) só entram em Development.
+      DOTNET_ENVIRONMENT: ${MO_ENVIRONMENT:-Development}
       ConnectionStrings__Database: Host=postgres;Port=5432;Database=ecommerce;Username=ecommerce;Password=${POSTGRES_PASSWORD:?}
       # Papel da API, só com leitura e escrita de dados (entrega 6 §3, P6). Vazio no .env: a API segue com o usuário dono.
       Database__AppRole: ${DB_APP_USER:-}
@@ -94,7 +101,7 @@ services:
     read_only: true
     tmpfs: [/tmp]
     environment:
-      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_ENVIRONMENT: ${MO_ENVIRONMENT:-Development}
       ConnectionStrings__Database: Host=postgres;Port=5432;Database=ecommerce;Username=${DB_APP_USER:-ecommerce};Password=${DB_APP_PASSWORD:-${POSTGRES_PASSWORD:?}}
       Jwt__SigningKey: ${JWT_SIGNING_KEY:?}
       RateLimiting__InternalKey: ${INTERNAL_KEY:?}
@@ -102,8 +109,18 @@ services:
       AdminSeed__Password: ${ADMIN_PASSWORD:?}
       Cors__AllowedOrigins__0: ${STORE_URL:?}
       Email__FrontendBaseUrl: ${STORE_URL:?}
+      # Smtp = Mailpit (ninguém recebe nada de verdade); Resend = e-mail real, para a equipe confirmar o cadastro.
+      Email__Provider: ${EMAIL_PROVIDER:-Smtp}
       Email__Smtp__Host: mailpit
       Email__Smtp__Port: "1025"
+      Email__Resend__ApiKey: ${RESEND_API_KEY:-}
+      Email__FromAddress: ${EMAIL_FROM_ADDRESS:-nao-responda@loja.local}
+      Email__FromName: ${EMAIL_FROM_NAME:-Loja}
+      Email__StoreAddress: ${EMAIL_STORE_ADDRESS:-loja@mo.local}
+      Ops__AlertEmail: ${OPS_ALERT_EMAIL:-alertas@mo.local}
+      Shipping__Provider: ${SHIPPING_PROVIDER:-Fake}
+      Shipping__MelhorEnvio__Token: ${MELHORENVIO_TOKEN:-}
+      Shipping__MelhorEnvio__UserAgent: ${MELHORENVIO_USER_AGENT:-}
       # Pagamento: falso até as credenciais de teste do Mercado Pago entrarem no .env (entrega 4 §6).
       Payments__Provider: ${PAYMENTS_PROVIDER:-Fake}
       Payments__MercadoPago__AccessToken: ${MERCADOPAGO_ACCESS_TOKEN:-}

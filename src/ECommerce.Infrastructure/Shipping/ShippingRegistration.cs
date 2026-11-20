@@ -21,12 +21,18 @@ public static class ShippingRegistration
                 settings => settings.Provider is ShippingProviderSettings.FakeProvider or ShippingProviderSettings.MelhorEnvioProvider,
                 "Shipping:Provider deve ser 'Fake' ou 'MelhorEnvio'.")
             .Validate(
-                settings => settings.Provider != ShippingProviderSettings.FakeProvider || environment.IsDevelopment() || environment.IsEnvironment("Testing"),
-                "O provedor de frete falso não pode ser usado fora de Development.")
+                // O ambiente de testes da equipe (Staging) pode cotar com o falso enquanto o token do sandbox não chega.
+                settings => settings.Provider != ShippingProviderSettings.FakeProvider || !environment.IsProduction(),
+                "O provedor de frete falso não pode ser usado em Production.")
             .Validate(
                 settings => settings.Provider != ShippingProviderSettings.MelhorEnvioProvider
                     || (!string.IsNullOrWhiteSpace(settings.MelhorEnvio.Token) && !string.IsNullOrWhiteSpace(settings.MelhorEnvio.UserAgent)),
                 "Shipping:MelhorEnvio:Token e Shipping:MelhorEnvio:UserAgent são obrigatórios com o provedor MelhorEnvio.")
+            // O endereço padrão é o sandbox; em produção ele cotaria preço de teste (entrega 6 §4.2).
+            .Validate(
+                settings => !environment.IsProduction() || settings.Provider != ShippingProviderSettings.MelhorEnvioProvider
+                    || !settings.MelhorEnvio.BaseUrl.Contains("sandbox", StringComparison.OrdinalIgnoreCase),
+                "Em Production, Shipping:MelhorEnvio:BaseUrl precisa ser o de produção (https://melhorenvio.com.br/), não o sandbox.")
             .ValidateOnStart();
 
         if (section["Provider"] == ShippingProviderSettings.FakeProvider)

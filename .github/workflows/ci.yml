@@ -96,7 +96,10 @@ jobs:
           context: .
           target: api
           push: true
-          tags: ${{ steps.names.outputs.api }}:${{ steps.names.outputs.tag }}
+          # `main` é móvel e só serve aos testes de ponta a ponta da loja (entrega 6.4); o deploy usa o digest.
+          tags: |
+            ${{ steps.names.outputs.api }}:${{ steps.names.outputs.tag }}
+            ${{ steps.names.outputs.api }}:main
           labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           provenance: mode=max
           sbom: true
@@ -108,7 +111,9 @@ jobs:
           context: .
           target: migrator
           push: true
-          tags: ${{ steps.names.outputs.migrator }}:${{ steps.names.outputs.tag }}
+          tags: |
+            ${{ steps.names.outputs.migrator }}:${{ steps.names.outputs.tag }}
+            ${{ steps.names.outputs.migrator }}:main
           labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           provenance: mode=max
           sbom: true
