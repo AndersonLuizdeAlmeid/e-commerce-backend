@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using MailKit;
 using MailKit.Net.Smtp;
 using MailKit.Security;
 using Microsoft.Extensions.Options;
@@ -77,7 +78,8 @@ internal sealed class SmtpEmailSender(IOptions<EmailSettings> options) : IEmailS
             await client.AuthenticateAsync(settings.Smtp.UserName, settings.Smtp.Password ?? string.Empty, cancellationToken);
         }
 
-        await client.SendAsync(mime, cancellationToken);
+        // MailKit 5: o envio recebe um SendRequest (a mensagem e, se preciso, remetente e destinatários do envelope).
+        await client.SendAsync(new SendRequest(mime), cancellationToken);
         await client.DisconnectAsync(quit: true, cancellationToken);
 
         return mime.MessageId;

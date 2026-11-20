@@ -63,7 +63,7 @@ public sealed class ImageProcessorTests
         var rotated = TestImages.JpegRotated(800, 400);
         using (var original = new MagickImage(rotated))
         {
-            original.Orientation.ShouldBe(OrientationType.RightTop);
+            original.Orientation.ShouldBe(Orientation.RightTop);
         }
 
         var result = _processor.Process(rotated);
@@ -131,11 +131,11 @@ public static class TestImages
     {
         using var image = new MagickImage(MagickColors.Goldenrod, width, height);
         var exif = new ExifProfile();
-        exif.SetValue(ExifTag.Orientation, (ushort)OrientationType.RightTop);
+        exif.SetValue(ExifTag.Orientation, (ushort)Orientation.RightTop);
         image.SetProfile(exif);
 
         // Ao gravar, o ImageMagick reescreve o EXIF a partir desta propriedade.
-        image.Orientation = OrientationType.RightTop;
+        image.Orientation = Orientation.RightTop;
         image.Format = MagickFormat.Jpeg;
         return image.ToByteArray();
     }
