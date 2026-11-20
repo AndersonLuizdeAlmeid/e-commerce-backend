@@ -23,7 +23,7 @@ public static class PendingRefundKinds
     /// <summary>Pedido cancelado há mais de 30 min e o pagamento continua aprovado: o Outbox desistiu ou ainda não conseguiu.</summary>
     public const string RefundNotDone = "RefundNotDone";
 
-    /// <summary>Pagamento confirmado à mão em pedido cancelado: só a loja devolve (entrega 5 §3, P2).</summary>
+    /// <summary>Pagamento confirmado à mão em pedido cancelado ou devolvido: só a loja devolve (entrega 5 §3, P2).</summary>
     public const string ManualPayment = "ManualPayment";
 }
 
@@ -47,7 +47,8 @@ public sealed record PendingRefundResponse(
     string? StatusDetail,
     string Kind,
     DateTime CancelledAt,
-    IReadOnlyList<string> Actions);
+    IReadOnlyList<string> Actions,
+    string OrderStatus);
 
 public sealed record ListPendingRefundsQuery : IQuery<IReadOnlyList<PendingRefundResponse>>;
 
@@ -69,7 +70,7 @@ internal static class PendingRefunds
     public static readonly TimeSpan OutboxGrace = TimeSpan.FromMinutes(30);
 
     public const string Condition = """
-        o.status = 'Cancelled'
+        o.status IN ('Cancelled','Returned')
         AND (p.status = 'RefundFailed'
              OR (p.status = 'Approved' AND (p.provider = 'manual' OR o.updated_at < @Since)))
         """;
@@ -97,7 +98,7 @@ internal static class PendingRefunds
         }
 
         var order = await orders.GetForUpdateAsync(payment.OrderId, null, cancellationToken);
-        if (order is null || order.Status != OrderStatus.Cancelled)
+        if (order is null || order.Status is not (OrderStatus.Cancelled or OrderStatus.Returned))
         {
             return null;
         }
@@ -113,7 +114,8 @@ internal sealed class ListPendingRefundsHandler(IDbConnectionFactory connectionF
 {
     private const string Sql = $"""
         SELECT p.id AS payment_id, o.id AS order_id, o.number, c.full_name AS customer_name, u.email::text AS customer_email,
-               p.method, p.provider, p.provider_payment_id, p.amount, p.status, p.status_detail, o.updated_at AS cancelled_at
+               p.method, p.provider, p.provider_payment_id, p.amount, p.status, p.status_detail, o.updated_at AS cancelled_at,
+               o.status AS order_status
           FROM payments.payments p
           JOIN ordering.orders o ON o.id = p.order_id
           JOIN identity.users u ON u.id = o.customer_id
@@ -146,7 +148,8 @@ internal sealed class ListPendingRefundsHandler(IDbConnectionFactory connectionF
                     row.StatusDetail,
                     kind,
                     DateTime.SpecifyKind(row.CancelledAt, DateTimeKind.Utc),
-                    PendingRefunds.ActionsFor(kind));
+                    PendingRefunds.ActionsFor(kind),
+                    row.OrderStatus);
             })
             .ToList();
 
@@ -167,6 +170,7 @@ internal sealed class ListPendingRefundsHandler(IDbConnectionFactory connectionF
         public string Status { get; init; } = string.Empty;
         public string? StatusDetail { get; init; }
         public DateTime CancelledAt { get; init; }
+        public string OrderStatus { get; init; } = string.Empty;
     }
 }
 

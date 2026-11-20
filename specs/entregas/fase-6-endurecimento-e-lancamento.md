@@ -1,7 +1,7 @@
 # Entrega — Fase 6: Endurecimento e lançamento
 
-**Status:** Planejada em 16/11/2026. **6.1 implementada e validada em 16/11/2026** com testes, scripts por `psql` num banco vazio e API em container com Mailpit. **6.2 implementada e validada em 18/11/2026**, menos a varredura ZAP, que depende do staging (6.5). Detalhes na seção 8. As outras fatias ainda não começaram.
-**Repositórios:** `e-commerce-backend` e `e-commerce-frontend` (branch `feat/fase-6` nos dois).
+**Status:** Planejada em 16/11/2026. **6.1 implementada e validada em 16/11/2026** com testes, scripts por `psql` num banco vazio e API em container com Mailpit. **6.2 implementada e validada em 18/11/2026**, menos a varredura ZAP, que depende do staging (6.5). **6.3 implementada e validada em 20/11/2026** (código, banco, API em container e telas); os textos legais são rascunho até chegarem os dados da loja e a revisão jurídica (§6, itens 4 e 5). Detalhes na seção 8. As outras fatias ainda não começaram.
+**Repositórios:** `e-commerce-backend` e `e-commerce-frontend` (branch `feat/fase-6` nos dois para 6.1 e 6.2, já na `main`; `feat/fase-6-3` para a 6.3).
 
 ## 1. Contexto
 
@@ -75,7 +75,7 @@ A entrega é feita em **sete fatias**. As de código (6.1 a 6.4 e o feed da 6.6)
 | Script | Conteúdo | Fatia |
 |--------|----------|-------|
 | `V0021__outbox_lease_and_ops.sql` ✅ | `locked_until` e `lock_token` em `messaging.outbox_messages` (P1); índice de mensagens que desistiram; schema `ops` com `ops.job_marks` (chave, última vez), usado pelo EM-11 e pela regra de 6 h dos alertas (P3, P4) | 6.1 |
-| `V0022__...` | `Returned` no `CHECK` da situação do pedido (P11); `anonymized_at` em `identity.users` (P7) | 6.3 |
+| `V0022__returns_and_account_removal.sql` ✅ | `Returned` no `CHECK` da situação do pedido (P11); `anonymized_at` em `identity.users`, com `CHECK` de que conta anonimizada nunca está ativa (P7) | 6.3 |
 
 Cada script entra no `database/gerar-scripts.sh`: a V0021 já está em `database/fase-6-schema.sql`; a V0022 vira `database/fase-6-3-schema.sql`. Os papéis `mo_app` e `mo_migrator` (P6) ficam no bootstrap da VM e numa seção comentada do README do `database/`, para quem usa o banco local pelo DBeaver.
 
@@ -202,7 +202,7 @@ Primeiro só build (A), depois banco (B) e por último execução (C). **A fase 
 |-------|----------|
 | 6.1 — Outbox, jobs e alertas internos | ✅ Implementada e validada em 16/11/2026. As métricas OTLP do §4.2 ficaram para a 6.5, junto com o Grafana Cloud |
 | 6.2 — Segurança | ✅ Implementada e validada em 18/11/2026. Falta a varredura ZAP (C6), que depende do staging, e conferir a CSP com o cartão no sandbox (C5). Duas decisões de senha e login esperam você (abaixo) |
-| 6.3 — LGPD, páginas legais e devolução | Planejada; textos dependem do §6 item 4 |
+| 6.3 — LGPD, páginas legais e devolução | ✅ Implementada e validada em 20/11/2026. Os textos de `/privacidade`, `/termos` e `/trocas-e-devolucoes` são rascunho: avisam isso no topo até a identificação da loja estar completa, e marcam em vermelho os pontos que a MO precisa decidir (§6, itens 4 e 5) |
 | 6.4 — E2E e carga | Planejada; k6 depende da 6.5 |
 | 6.5 — Produção e staging | Planejada; depende do domínio e da VM |
 | 6.6 — Google | Planejada; contas dependem da 6.5 |
@@ -269,6 +269,49 @@ Os testes já cobriam IDOR, autorização do `/admin`, rotas anônimas, CORS, ra
 | C6 | ⏳ Varredura ZAP: depende do staging (6.5) |
 
 **O que fazer no GitHub depois do merge:** em Settings → Code security dos dois repositórios, ligar **Dependabot alerts** e **Dependabot security updates** (o arquivo `.github/dependabot.yml` cuida só das atualizações semanais), e conferir se o **secret scanning** com push protection está ligado.
+
+### Ajustes ao plano feitos na 6.3
+
+- **Exclusão de conta**:
+  - O e-mail vira `removida-<id>@invalid` (domínio reservado), e o endereço original fica livre para um cadastro novo.
+  - A senha vira um valor que nenhum verificador aceita.
+  - A conta fica inativa, com `CHECK` no banco.
+  - O painel recusa reativar ou promover a conta (`422 Identity.AccountRemoved`) e mostra a linha sem ações.
+  - O cache do stamp é apagado na hora, então o access token que ainda estiver valendo para no próximo request (`403`). Antes da correção ele passava por até 1 min.
+- **O que fica no pedido**:
+  - Ficam peças, valores, datas, frete, cidade e UF.
+  - Destinatário, rua, número, complemento e bairro viram "Cliente removida"/"Removido", e o CEP vira `00000000`.
+  - Dedicatória e observação somem.
+  - As notas do histórico são da loja e ficam.
+  - Endereços, sacola e links de e-mail pendentes são apagados.
+- **Bloqueios da exclusão** (P7): pedido em aguardando pagamento, pago, em separação ou enviado → `422 Identity.AccountHasOpenOrders`; estorno recusado, ou pagamento aprovado em pedido cancelado ou devolvido → `422 Identity.AccountHasPendingRefund`. A senha errada é `400 Identity.WrongCurrentPassword`, sob o limite `auth-strict`.
+- **Exportação** (P8):
+  - Vai junto uma lista `notes` explicando o que a loja não guarda: cartão, cookie além do de sessão e marketing. Não há tabela de consentimentos, porque a loja não pede nenhum (P9).
+  - O limite de 3 por dia fica em memória: reiniciar a API zera a contagem. Com uma instância só, isso basta.
+- **Devolução** (P11):
+  - O estorno sai pelo Outbox só para pagamento da plataforma. Pagamento confirmado à mão entra na fila de estornos pendentes, que agora aceita pedido `Returned` e mostra se o pedido foi cancelado ou devolvido.
+  - O EM-13 é o mesmo do estorno, mandado quando o estorno é aceito.
+  - Entregue passa a ter a ação `Return`, e o teste da Fase 5 que esperava "nenhuma ação" foi atualizado.
+- **Identificação da loja**:
+  - Vem de `NEXT_PUBLIC_STORE_LEGAL_NAME`, `_CNPJ`, `_ADDRESS`, `_EMAIL` e `_PHONE`, fixadas no build como os outros endereços.
+  - No CI saem das variáveis `STORE_*` do repositório da loja no GitHub, e o Dockerfile já recebe os `ARG`.
+  - O que não estiver configurado não aparece no rodapé, e as páginas legais avisam que são rascunho.
+- **`noindex` do staging** ficou para a 6.5, junto com o staging.
+
+### Validação da 6.3 (20/11/2026)
+
+| Item | Resultado |
+|------|-----------|
+| A1 | ✅ `dotnet build` com 0 avisos |
+| A2 | ✅ lint, typecheck, **222 testes** da loja (9 novos: identificação da loja e regras da tela de privacidade) e build de produção; as 4 páginas novas saem estáticas |
+| Testes | ✅ domínio **222** (11 novos: devolução e anonimização), aplicação 36, arquitetura 8, funcionais **337 de 337** (8 novos em `PrivacyTests` e 1 teste da Fase 5 atualizado) |
+| B1 | ✅ `fase-0` a `fase-6-3-schema.sql` aplicados em ordem por `psql` num banco vazio (22 migrations); a segunda execução do `fase-6-3` recusa com "Script já aplicado"; o migrator do container aplicou a V0022 no banco local |
+| C7 | ✅ API em container: `200` com `Content-Disposition: attachment`, só a própria conta, com dedicatória, histórico e pagamento. Na tela, "Baixar arquivo" gera o JSON sem erro no console |
+| C8 | ✅ API em container e tela: com pedido aguardando pagamento, `422` com a mensagem na tela; senha errada, "A senha não confere."; depois de cancelar, `204`, tela de confirmação e sessão encerrada; login `401`; token antigo `403`; no banco, nome "Cliente removida", sem telefone, CPF, endereços nem dedicatória; painel com "Cliente removida" e sem ações na lista de usuários |
+| C9 | ✅ API em container: Devolvido, estorno `Refunded` pelo Outbox, EM-13 no Mailpit, estoque igual. Na tela: botão "Registrar devolução" no pedido entregue, motivo obrigatório, aviso de que o estoque não volta sozinho, aba "Devolvidos" na lista |
+| C10 | 🟡 Rodapé com os links legais em todas as páginas da loja, sem rolagem lateral em 375 px. ⏳ **Dados da loja**: dependem do §6 item 4; enquanto faltarem, o rodapé mostra só "MO Acessórios" |
+
+**O que falta para fechar a 6.3 de vez (não é código):** razão social, CNPJ, endereço, e-mail e telefone de atendimento da loja; as decisões marcadas nas páginas (envio da devolução, prazo e frete da troca, cobertura da garantia do banho, parcelamento); e a revisão jurídica dos três textos.
 
 ### Riscos
 

@@ -132,3 +132,7 @@ gen database/fase-5-schema.sql schemaversions "$P.Migrations" \
 gen database/fase-6-schema.sql schemaversions "$P.Migrations" \
   "Fase 6.1 — reserva do Outbox e marcas dos jobs de operação (EM-11, EM-14)" "$P.Migrations.V0020__backoffice.sql" \
   $M/V0021__outbox_lease_and_ops.sql
+
+gen database/fase-6-3-schema.sql schemaversions "$P.Migrations" \
+  "Fase 6.3 — devolução de pedido entregue e exclusão de conta (LGPD)" "$P.Migrations.V0021__outbox_lease_and_ops.sql" \
+  $M/V0022__returns_and_account_removal.sql

@@ -14,6 +14,7 @@ internal static class RateLimitPolicies
     public const string CustomerWrite = "customer-write";
     public const string AdminWrite = "admin-write";
     public const string ShippingQuote = "shipping-quote";
+    public const string DataExport = "data-export";
 }
 
 /// <summary>Seção <c>RateLimiting</c>: valores ajustáveis sem recompilar (arquivo 11 §3).</summary>
@@ -38,6 +39,9 @@ internal sealed class RateLimitingSettings
 
     /// <summary>Cada cotação pode custar uma chamada ao provedor de frete (arquivo 11).</summary>
     public FixedWindow ShippingQuote { get; init; } = new(20, 60);
+
+    /// <summary>Exportação de dados (LGPD, entrega 6 §3 P8): 3 por dia por usuária. Fica em memória: reiniciar a API zera.</summary>
+    public FixedWindow DataExport { get; init; } = new(3, 86_400);
 
     public sealed record FixedWindow(int PermitLimit, int WindowSeconds);
 
@@ -93,6 +97,8 @@ internal static partial class RateLimitingExtensions
                     SegmentsPerWindow = 6,
                     QueueLimit = 0,
                 }));
+            options.AddPolicy(RateLimitPolicies.DataExport, context =>
+                RateLimitPartition.GetFixedWindowLimiter(PartitionKey(context), _ => FixedWindow(settings.DataExport)));
         });
 
         return services;

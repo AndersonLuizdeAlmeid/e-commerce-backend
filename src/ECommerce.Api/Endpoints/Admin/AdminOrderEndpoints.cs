@@ -13,6 +13,8 @@ internal sealed record ReasonRequest(string? Reason);
 
 internal sealed record GiftMessageRequest(string? Message);
 
+internal sealed record ReturnRequest(string? Note);
+
 /// <summary><c>/api/v1/admin/orders</c> — RF-053 e RF-047 CA3 (arquivo 07 §9, entrega 5 fatia 5.1).</summary>
 internal sealed class AdminOrderEndpoints : IEndpointGroup
 {
@@ -50,6 +52,12 @@ internal sealed class AdminOrderEndpoints : IEndpointGroup
         orders.MapPost("/{id:guid}/confirm-payment", ConfirmPayment).WithName("AdminConfirmOrderPayment")
             .WithSummary("Confirma o pagamento à mão, com motivo obrigatório (CA1)")
             .WithDescription("Exceção para pagamento conciliado fora do sistema: grava um pagamento `Manual` e cancela o PIX aberto.")
+            .RequireRateLimiting(RateLimitPolicies.AdminWrite);
+        orders.MapPost("/{id:guid}/return", Return).WithName("AdminReturnOrder")
+            .WithSummary("Entregue → devolvido, com o motivo; estorna o total pelo Outbox")
+            .WithDescription(
+                "Arrependimento ou troca (entrega 6 §3, P11). A cliente recebe o EM-13 quando o estorno é aceito; pagamento confirmado à mão " +
+                "vai para os estornos pendentes. O estoque não volta sozinho: a peça é conferida e entra por ajuste.")
             .RequireRateLimiting(RateLimitPolicies.AdminWrite);
         orders.MapPut("/{id:guid}/gift-message", CorrectGiftMessage).WithName("AdminCorrectGiftMessage")
             .WithSummary("Corrige a dedicatória até o pedido ser enviado (RF-047 CA3)")
@@ -140,6 +148,15 @@ internal sealed class AdminOrderEndpoints : IEndpointGroup
         IQueryHandler<GetAdminOrderQuery, AdminOrderResponse> order,
         CancellationToken cancellationToken) =>
         ThenGet(id, handler.Handle(new CorrectGiftMessageCommand(id, request.Message, currentUser.UserId), cancellationToken), order, cancellationToken);
+
+    private static Task<Results<Ok<AdminOrderResponse>, ProblemHttpResult>> Return(
+        Guid id,
+        ReturnRequest request,
+        ICurrentUser currentUser,
+        ICommandHandler<ReturnOrderCommand> handler,
+        IQueryHandler<GetAdminOrderQuery, AdminOrderResponse> order,
+        CancellationToken cancellationToken) =>
+        ThenGet(id, handler.Handle(new ReturnOrderCommand(id, request.Note, currentUser.UserId), cancellationToken), order, cancellationToken);
 
     /// <summary>Toda escrita responde o pedido atualizado, para a tela não consultar de novo.</summary>
     private static async Task<Results<Ok<AdminOrderResponse>, ProblemHttpResult>> ThenGet(
