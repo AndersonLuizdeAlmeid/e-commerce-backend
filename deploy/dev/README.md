@@ -91,7 +91,9 @@ A mesma VM vira o ambiente de testes da equipe interna, aberto pelo navegador se
 
    O `bootstrap.sh` reescreve `STORE_URL` com o endereço do Tailscale: depois de rodá-lo de novo, volte esta linha.
 4. **nginx:** `nginx-teste.conf` em `/etc/nginx/sites-available/mo-teste`, link em `sites-enabled`, `nginx -t`,
-   `systemctl reload nginx` e `certbot --nginx -d loja-teste.contrax.one -d api-loja-teste.contrax.one`.
+   `systemctl reload nginx` e `certbot --nginx -d loja-teste.contrax.one -d api-loja-teste.contrax.one`. Em seguida, troque
+   os `listen 443 ssl` que o certbot criou por `listen 157.173.113.54:443 ssl` e apague os `listen [::]:443`: a 443 do IP
+   do Tailscale é do `tailscale serve` (detalhe no começo do `nginx-teste.conf`).
 5. **GitHub, ambiente `dev` do frontend:** variáveis `STORE_URL=https://loja-teste.contrax.one`,
    `API_URL=https://api-loja-teste.contrax.one` e `STORE_ENV=staging`. Os endereços ficam gravados no build da loja,
    então a loja só muda no próximo deploy dela.
