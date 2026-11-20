@@ -39,6 +39,6 @@
     <PackageVersion Include="Respawn" Version="7.0.0" />
     <PackageVersion Include="WireMock.Net" Version="2.31.0" />
     <!-- Transitiva do WireMock (via Microsoft.AspNetCore.Http 2.3.9, que pede 2.3.0); fixada por causa do GHSA-6527-9fp8-r4x6. -->
-    <PackageVersion Include="Microsoft.AspNetCore.WebUtilities" Version="2.3.14" />
+    <PackageVersion Include="Microsoft.AspNetCore.WebUtilities" Version="10.0.15" />
   </ItemGroup>
 </Project>
