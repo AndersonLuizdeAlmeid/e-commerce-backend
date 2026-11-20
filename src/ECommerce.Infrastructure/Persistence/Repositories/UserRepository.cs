@@ -8,7 +8,7 @@ internal sealed class UserRepository(IUnitOfWork unitOfWork) : IUserRepository
 {
     private const string SelectColumns = """
         SELECT id, email::text AS email, password_hash, role, is_active, email_confirmed_at, failed_login_attempts,
-               lockout_end_utc, security_stamp, version, created_at, updated_at
+               lockout_end_utc, security_stamp, version, created_at, updated_at, anonymized_at
           FROM identity.users
         """;
 
@@ -57,10 +57,10 @@ internal sealed class UserRepository(IUnitOfWork unitOfWork) : IUserRepository
         var updated = await unitOfWork.Connection.ExecuteAsync(Command(
             """
             UPDATE identity.users
-               SET password_hash = @PasswordHash, role = @Role, is_active = @IsActive,
+               SET email = @Email, password_hash = @PasswordHash, role = @Role, is_active = @IsActive,
                    email_confirmed_at = @EmailConfirmedAt, failed_login_attempts = @FailedLoginAttempts,
                    lockout_end_utc = @LockoutEnd, security_stamp = @SecurityStamp,
-                   version = version + 1, updated_at = @UpdatedAt
+                   anonymized_at = @AnonymizedAt, version = version + 1, updated_at = @UpdatedAt
              WHERE id = @Id AND version = @Version
             """,
             Parameters(user),
@@ -83,6 +83,7 @@ internal sealed class UserRepository(IUnitOfWork unitOfWork) : IUserRepository
         user.Version,
         CreatedAt = user.CreatedAtUtc,
         UpdatedAt = user.UpdatedAtUtc,
+        AnonymizedAt = user.AnonymizedAtUtc,
     };
 
     private async Task<User?> QuerySingleAsync(string sql, object parameters, CancellationToken cancellationToken)
@@ -102,7 +103,8 @@ internal sealed class UserRepository(IUnitOfWork unitOfWork) : IUserRepository
                 row.SecurityStamp,
                 row.Version,
                 row.CreatedAt,
-                row.UpdatedAt);
+                row.UpdatedAt,
+                row.AnonymizedAt);
     }
 
     private CommandDefinition Command(string sql, object? parameters, CancellationToken cancellationToken) =>
@@ -122,5 +124,6 @@ internal sealed class UserRepository(IUnitOfWork unitOfWork) : IUserRepository
         public int Version { get; init; }
         public DateTime CreatedAt { get; init; }
         public DateTime UpdatedAt { get; init; }
+        public DateTime? AnonymizedAt { get; init; }
     }
 }

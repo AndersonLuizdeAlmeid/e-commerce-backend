@@ -1,12 +1,18 @@
+using ECommerce.Api.Endpoints.Identity;
 using ECommerce.Api.Extensions;
 using ECommerce.Application.Abstractions.Authentication;
+using ECommerce.Application.Abstractions.Caching;
 using ECommerce.Application.Abstractions.Messaging;
 using ECommerce.Application.Customers;
+using ECommerce.Application.Identity.Privacy;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Mvc;
 
 namespace ECommerce.Api.Endpoints.Customers;
 
 internal sealed record UpdateProfileRequest(string FullName, string Phone, string? Cpf);
+
+internal sealed record DeleteAccountRequest(string? Password);
 
 internal sealed record AddressRequest(
     string? Recipient,
@@ -34,6 +40,19 @@ internal sealed class MeEndpoints : IEndpointGroup
             .WithName("UpdateProfile").WithSummary("Atualiza nome, telefone e CPF (RF-005)")
             .WithDescription("`cpf` vazio mantém o CPF atual.")
             .RequireRateLimiting(RateLimitPolicies.CustomerWrite);
+
+        group.MapGet("/data-export", ExportData)
+            .WithName("ExportMyData").WithSummary("Baixa todos os dados da conta em JSON (LGPD)")
+            .WithDescription("Perfil, endereços e pedidos com itens, situação e pagamentos, só da própria conta. Até 3 por dia (429 depois).")
+            .RequireRateLimiting(RateLimitPolicies.DataExport);
+
+        group.MapDelete(string.Empty, DeleteAccount)
+            .WithName("DeleteMyAccount").WithSummary("Exclui a conta (LGPD): apaga os dados pessoais e mantém os pedidos sem eles")
+            .WithDescription(
+                "Pede a senha atual (400 `Identity.WrongCurrentPassword` se não conferir). Pedido entre aguardando pagamento e enviado → " +
+                "422 `Identity.AccountHasOpenOrders`; estorno em andamento → 422 `Identity.AccountHasPendingRefund`. Sucesso: 204, " +
+                "todas as sessões encerradas e o cookie de sessão apagado.")
+            .RequireRateLimiting(RateLimitPolicies.AuthStrict);
 
         var addresses = group.MapGroup("/addresses");
 
@@ -76,6 +95,41 @@ internal sealed class MeEndpoints : IEndpointGroup
         var result = await handler.Handle(
             new UpdateProfileCommand(currentUser.UserId, request.FullName, request.Phone, request.Cpf), cancellationToken);
         return result.IsSuccess ? TypedResults.NoContent() : result.Error.ToProblem();
+    }
+
+    private static async Task<Results<Ok<DataExportResponse>, ProblemHttpResult>> ExportData(
+        HttpContext context,
+        ICurrentUser currentUser,
+        IQueryHandler<ExportMyDataQuery, DataExportResponse> handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.Handle(new ExportMyDataQuery(currentUser.UserId), cancellationToken);
+        if (result.IsSuccess)
+        {
+            context.Response.Headers.ContentDisposition = "attachment; filename=\"meus-dados.json\"";
+        }
+
+        return result.ToHttpResult();
+    }
+
+    private static async Task<Results<NoContent, ProblemHttpResult>> DeleteAccount(
+        [FromBody] DeleteAccountRequest request,
+        HttpContext context,
+        ICurrentUser currentUser,
+        ICommandHandler<DeleteMyAccountCommand> handler,
+        ICacheService cache,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.Handle(new DeleteMyAccountCommand(currentUser.UserId, request.Password), cancellationToken);
+        if (result.IsFailure)
+        {
+            return result.Error.ToProblem();
+        }
+
+        // Depois do commit: o stamp em cache cai, e o access token que ainda estiver valendo para no próximo request.
+        await cache.RemoveByTagAsync($"user:{currentUser.UserId.Value}", cancellationToken);
+        RefreshTokenCookie.Delete(context);
+        return TypedResults.NoContent();
     }
 
     private static async Task<Results<Ok<IReadOnlyList<AddressResponse>>, ProblemHttpResult>> ListAddresses(

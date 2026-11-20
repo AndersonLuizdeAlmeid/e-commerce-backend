@@ -37,6 +37,20 @@ public static class IdentityErrors
     public static readonly Error CannotChangeSelf =
         Error.BusinessRule("Identity.CannotChangeSelf", "Você não pode desativar nem rebaixar a sua própria conta. Peça a outra administradora.");
 
+    /// <summary>Entrega 6 §3, P7: conta excluída pela cliente não volta pelo painel.</summary>
+    public static readonly Error AccountRemoved =
+        Error.BusinessRule("Identity.AccountRemoved", "Esta conta foi excluída pela cliente e não pode ser reativada.");
+
+    /// <summary>Entrega 6 §3, P7: pedido entre o pagamento e a entrega precisa do destinatário.</summary>
+    public static readonly Error AccountHasOpenOrders = Error.BusinessRule(
+        "Identity.AccountHasOpenOrders",
+        "Você tem um pedido em andamento. A conta pode ser excluída depois que ele for entregue ou cancelado.");
+
+    /// <summary>Entrega 6 §3, P7: o estorno precisa chegar antes de os dados sumirem.</summary>
+    public static readonly Error AccountHasPendingRefund = Error.BusinessRule(
+        "Identity.AccountHasPendingRefund",
+        "Ainda há uma devolução de pagamento em andamento. A conta pode ser excluída depois que ela for concluída.");
+
     /// <summary>RF-054 CA2: a loja sempre tem uma administradora ativa.</summary>
     public static readonly Error LastAdmin =
         Error.BusinessRule("Identity.LastAdmin", "Esta é a única administradora ativa. Promova outra conta antes.");

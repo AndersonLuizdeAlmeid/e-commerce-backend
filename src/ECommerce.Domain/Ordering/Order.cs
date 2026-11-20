@@ -44,6 +44,9 @@ public static class OrderErrors
 
     public static readonly Error GiftMessageLocked =
         Error.BusinessRule("Ordering.GiftMessageLocked", "A dedicatória só pode ser corrigida até o pedido ser enviado.");
+
+    public static readonly Error ReturnNoteRequired =
+        Error.Validation("Ordering.ReturnNoteRequired", $"Conte o motivo da devolução, em até {Order.ReturnNoteMaxLength} caracteres.");
 }
 
 /// <summary>
@@ -80,6 +83,9 @@ public enum OrderStatus
     Shipped,
     Delivered,
     Cancelled,
+
+    /// <summary>Devolvido depois de entregue (arrependimento ou troca), com estorno total (entrega 6 §3, P11).</summary>
+    Returned,
 }
 
 public enum CancellationReason
@@ -154,6 +160,7 @@ public sealed record OrderStatusChange(Guid Id, OrderStatus? From, OrderStatus T
 public sealed class Order
 {
     public const int NotesMaxLength = 500;
+    public const int ReturnNoteMaxLength = 500;
     public static readonly TimeSpan PaymentWindow = TimeSpan.FromHours(48);
     public static readonly TimeSpan ReminderAfter = TimeSpan.FromHours(24);
 
@@ -410,6 +417,27 @@ public sealed class Order
             : Result.Failure(OrderErrors.InvalidTransition);
 
     /// <summary>
+    /// Devolução (entrega 6 §3, P11): só de entregue, com o motivo no histórico. Quem chama pede o estorno total; o estoque
+    /// não volta sozinho, porque a peça é conferida antes. O prazo de 7 dias do arrependimento não é travado aqui: quem
+    /// decide é a loja.
+    /// </summary>
+    public Result MarkReturned(string? note, UserId by, DateTime nowUtc)
+    {
+        if (Status != OrderStatus.Delivered)
+        {
+            return Result.Failure(OrderErrors.InvalidTransition);
+        }
+
+        var text = note?.Trim();
+        if (string.IsNullOrEmpty(text) || text.Length > ReturnNoteMaxLength)
+        {
+            return Result.Failure(OrderErrors.ReturnNoteRequired);
+        }
+
+        return MoveTo(OrderStatus.Returned, by, nowUtc, text);
+    }
+
+    /// <summary>
     /// RF-047 CA3: a loja corrige a dedicatória até o pedido ser enviado. O texto não vai para o histórico (CA4): a nota
     /// diz só que mudou.
     /// </summary>
@@ -420,7 +448,7 @@ public sealed class Order
             return Result.Failure(OrderErrors.NotAGift);
         }
 
-        if (Status is OrderStatus.Shipped or OrderStatus.Delivered or OrderStatus.Cancelled)
+        if (Status is OrderStatus.Shipped or OrderStatus.Delivered or OrderStatus.Cancelled or OrderStatus.Returned)
         {
             return Result.Failure(OrderErrors.GiftMessageLocked);
         }
