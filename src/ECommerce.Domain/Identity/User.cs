@@ -36,7 +36,15 @@ public sealed class User : AggregateRoot<UserId>
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime UpdatedAtUtc { get; private set; }
 
+    /// <summary>Conta excluída pela própria cliente (entrega 6 §3, P7): sem dado pessoal e sem volta.</summary>
+    public DateTime? AnonymizedAtUtc { get; private set; }
+
     public bool IsEmailConfirmed => EmailConfirmedAtUtc.HasValue;
+
+    public bool IsAnonymized => AnonymizedAtUtc.HasValue;
+
+    /// <summary>Domínio reservado (RFC 2606): nenhum e-mail sai para ele e ninguém consegue se cadastrar com ele.</summary>
+    public static string AnonymizedEmailFor(UserId id) => $"removida-{id.Value:N}@invalid";
 
     /// <summary>RF-001 CA5: o cadastro público sempre cria <see cref="Role.Customer"/>.</summary>
     public static User RegisterCustomer(Email email, string passwordHash, DateTime nowUtc) =>
@@ -66,9 +74,11 @@ public sealed class User : AggregateRoot<UserId>
 
     public static User Rehydrate(
         UserId id, Email email, string passwordHash, Role role, bool isActive, DateTime? emailConfirmedAtUtc,
-        int failedLoginAttempts, DateTime? lockoutEndUtc, Guid securityStamp, int version, DateTime createdAtUtc, DateTime updatedAtUtc) =>
+        int failedLoginAttempts, DateTime? lockoutEndUtc, Guid securityStamp, int version, DateTime createdAtUtc, DateTime updatedAtUtc,
+        DateTime? anonymizedAtUtc = null) =>
         new()
         {
+            AnonymizedAtUtc = anonymizedAtUtc,
             Id = id,
             Email = email,
             PasswordHash = passwordHash,
@@ -150,7 +160,7 @@ public sealed class User : AggregateRoot<UserId>
     /// </summary>
     public bool SetActive(bool isActive, DateTime nowUtc)
     {
-        if (IsActive == isActive)
+        if (IsActive == isActive || IsAnonymized)
         {
             return false;
         }
@@ -164,7 +174,7 @@ public sealed class User : AggregateRoot<UserId>
     /// <summary>Promove ou rebaixa (RF-054). Troca o stamp: o papel antigo do token deixa de valer na hora.</summary>
     public bool ChangeRole(Role role, DateTime nowUtc)
     {
-        if (Role == role)
+        if (Role == role || IsAnonymized)
         {
             return false;
         }
@@ -174,4 +184,36 @@ public sealed class User : AggregateRoot<UserId>
         UpdatedAtUtc = nowUtc;
         return true;
     }
+
+    /// <summary>
+    /// Exclusão da conta pela cliente (entrega 6 §3, P7). O e-mail vira um endereço reservado (o original fica livre
+    /// para um cadastro novo), a senha some, a conta fica inativa e o stamp novo derruba o token que ainda estiver
+    /// valendo. Só cliente: a administradora sai pelo painel. Idempotente.
+    /// </summary>
+    public bool Anonymize(DateTime nowUtc)
+    {
+        if (IsAnonymized)
+        {
+            return false;
+        }
+
+        if (Role != Role.Customer)
+        {
+            throw new InvalidOperationException("Só conta de cliente é excluída pela própria pessoa.");
+        }
+
+        Email = Email.Rehydrate(AnonymizedEmailFor(Id));
+        PasswordHash = RemovedPasswordHash;
+        IsActive = false;
+        EmailConfirmedAtUtc = null;
+        FailedLoginAttempts = 0;
+        LockoutEndUtc = null;
+        SecurityStamp = Guid.NewGuid();
+        AnonymizedAtUtc = nowUtc;
+        UpdatedAtUtc = nowUtc;
+        return true;
+    }
+
+    /// <summary>Um byte zero em base64: formato que o verificador lê sem erro e com o qual nenhuma senha confere.</summary>
+    public const string RemovedPasswordHash = "AA==";
 }

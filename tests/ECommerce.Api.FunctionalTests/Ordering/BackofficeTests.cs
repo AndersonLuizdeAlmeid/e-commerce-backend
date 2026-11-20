@@ -77,7 +77,8 @@ public sealed class BackofficeTests(ApiFactory factory) : ShopperTest(factory)
 
         var delivered = await ActAsync(s.Admin, s.Order, "deliver");
         delivered.GetProperty("status").GetString().ShouldBe("Delivered");
-        delivered.GetProperty("allowedActions").GetArrayLength().ShouldBe(0);
+        // Entregue só aceita a devolução (entrega 6 §3, P11).
+        delivered.GetProperty("allowedActions").EnumerateArray().Select(a => a.GetString()).ShouldBe(["Return"]);
         await Factory.Emails.WaitForAsync("caminho@loja.teste", "entregue");
 
         var history = delivered.GetProperty("history").EnumerateArray().ToList();
