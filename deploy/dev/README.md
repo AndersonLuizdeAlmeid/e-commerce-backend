@@ -68,22 +68,22 @@ A mesma VM vira o ambiente de testes da equipe interna, aberto pelo navegador se
 | `MO_ENVIRONMENT` | `Development` | `Staging` |
 | Banco | Com peças, categorias e fotos de exemplo | Vazio: só a conta da administradora. Os donos da loja cadastram tudo pelo painel |
 | E-mail | Mailpit (ninguém recebe) | Resend, de verdade, para confirmar o cadastro e acompanhar os pedidos |
-| Endereço | `https://mo-dev.<rede>.ts.net`, só pelo Tailscale | `https://loja-teste.contrax.com.br` e `https://api-loja-teste.contrax.com.br`, pelo nginx da VM |
+| Endereço | `https://mo-dev.<rede>.ts.net`, só pelo Tailscale | `https://loja-teste.contrax.one` e `https://api-loja-teste.contrax.one`, pelo nginx da VM |
 | Loja | Sem faixa | Faixa "Ambiente de testes" no topo e nada indexado pelos buscadores (`STORE_ENV=staging`) |
 | Pagamento e frete | Simulados | Simulados até as credenciais de sandbox entrarem no `.env` (seção abaixo) |
 
 ### Ligar
 
-1. **DNS:** registros `A` de `loja-teste.contrax.com.br` e `api-loja-teste.contrax.com.br` para o IP público da VM.
-2. **Resend:** domínio `contrax.com.br` verificado (SPF e DKIM no DNS) e uma API key só com permissão de envio.
+1. **DNS (GoDaddy):** registros `A` de `loja-teste` e `api-loja-teste` apontando para o IP público da VM (`157.173.113.54`).
+2. **Resend:** domínio `contrax.one` verificado (SPF e DKIM no DNS) e uma API key só com permissão de envio.
 3. **`.env` da VM** (`/opt/mo/.env`, como root), colando os valores direto no arquivo:
 
    ```
    MO_ENVIRONMENT=Staging
-   STORE_URL=https://loja-teste.contrax.com.br
+   STORE_URL=https://loja-teste.contrax.one
    EMAIL_PROVIDER=Resend
    RESEND_API_KEY=re_...
-   EMAIL_FROM_ADDRESS=nao-responda@contrax.com.br
+   EMAIL_FROM_ADDRESS=nao-responda@contrax.one
    EMAIL_FROM_NAME=MO (testes)
    EMAIL_STORE_ADDRESS=...        # para onde vai o aviso de pedido novo
    OPS_ALERT_EMAIL=...            # para onde vão os alertas da operação
@@ -91,9 +91,9 @@ A mesma VM vira o ambiente de testes da equipe interna, aberto pelo navegador se
 
    O `bootstrap.sh` reescreve `STORE_URL` com o endereço do Tailscale: depois de rodá-lo de novo, volte esta linha.
 4. **nginx:** `nginx-teste.conf` em `/etc/nginx/sites-available/mo-teste`, link em `sites-enabled`, `nginx -t`,
-   `systemctl reload nginx` e `certbot --nginx -d loja-teste.contrax.com.br -d api-loja-teste.contrax.com.br`.
-5. **GitHub, ambiente `dev` do frontend:** variáveis `STORE_URL=https://loja-teste.contrax.com.br`,
-   `API_URL=https://api-loja-teste.contrax.com.br` e `STORE_ENV=staging`. Os endereços ficam gravados no build da loja,
+   `systemctl reload nginx` e `certbot --nginx -d loja-teste.contrax.one -d api-loja-teste.contrax.one`.
+5. **GitHub, ambiente `dev` do frontend:** variáveis `STORE_URL=https://loja-teste.contrax.one`,
+   `API_URL=https://api-loja-teste.contrax.one` e `STORE_ENV=staging`. Os endereços ficam gravados no build da loja,
    então a loja só muda no próximo deploy dela.
 6. **Banco do zero**, sem os dados de exemplo (apaga pedidos, clientes e fotos do ambiente):
 
