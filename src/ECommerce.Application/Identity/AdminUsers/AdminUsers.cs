@@ -11,7 +11,10 @@ namespace ECommerce.Application.Identity.AdminUsers;
 
 // RF-054 — usuários no painel. Entrega 5, fatia 5.3.
 
-/// <summary><see cref="IsSelf"/>: a linha de quem está olhando, sem ações (CA1).</summary>
+/// <summary>
+/// <see cref="IsSelf"/>: a linha de quem está olhando, sem ações (CA1). <see cref="Removed"/>: a cliente excluiu a conta
+/// (entrega 6 §3, P7), sem ações também.
+/// </summary>
 public sealed record AdminUserResponse(
     Guid Id,
     string Email,
@@ -23,7 +26,8 @@ public sealed record AdminUserResponse(
     DateTime CreatedAt,
     int OrderCount,
     DateTime? LastOrderAt,
-    bool IsSelf);
+    bool IsSelf,
+    bool Removed);
 
 /// <summary><see cref="Search"/>: nome ou e-mail.</summary>
 public sealed record ListAdminUsersQuery(
@@ -72,7 +76,7 @@ internal static class AdminUserSql
         SELECT u.id, u.email::text AS email, c.full_name AS name, u.role, u.is_active,
                u.email_confirmed_at IS NOT NULL AS email_confirmed,
                coalesce(u.lockout_end_utc > @Now, false) AS is_locked_out,
-               u.created_at,
+               u.created_at, u.anonymized_at IS NOT NULL AS removed,
                (SELECT count(*) FROM ordering.orders o WHERE o.customer_id = u.id)::int AS order_count,
                (SELECT max(o.placed_at) FROM ordering.orders o WHERE o.customer_id = u.id) AS last_order_at
           FROM identity.users u
@@ -90,7 +94,8 @@ internal static class AdminUserSql
         DateTime.SpecifyKind(row.CreatedAt, DateTimeKind.Utc),
         row.OrderCount,
         row.LastOrderAt is { } last ? DateTime.SpecifyKind(last, DateTimeKind.Utc) : null,
-        row.Id == viewer.Value);
+        row.Id == viewer.Value,
+        row.Removed);
 
     internal sealed class Row
     {
@@ -104,6 +109,7 @@ internal static class AdminUserSql
         public DateTime CreatedAt { get; init; }
         public int OrderCount { get; init; }
         public DateTime? LastOrderAt { get; init; }
+        public bool Removed { get; init; }
     }
 }
 
@@ -187,6 +193,11 @@ internal static class AdminUserChange
         if (user is null)
         {
             return IdentityErrors.UserNotFound;
+        }
+
+        if (user.IsAnonymized)
+        {
+            return IdentityErrors.AccountRemoved;
         }
 
         if (removesAdmin && user.Role == Role.Admin && user.IsActive && activeAdmins.All(id => id == user.Id))

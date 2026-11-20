@@ -37,7 +37,8 @@ public sealed record OrderStatusCount(string Status, int Count);
 /// <summary><see cref="StatusCounts"/>: com os mesmos filtros, menos a situação, para as abas mostrarem quantos há em cada.</summary>
 public sealed record AdminOrderListResponse(PagedResponse<AdminOrderSummaryResponse> Orders, IReadOnlyList<OrderStatusCount> StatusCounts);
 
-public sealed record AdminOrderCustomerResponse(Guid Id, string Name, string Email, string? Phone, int OrderCount);
+/// <summary><see cref="Removed"/>: a cliente excluiu a conta (entrega 6 §3, P7); nome e e-mail já vêm substituídos.</summary>
+public sealed record AdminOrderCustomerResponse(Guid Id, string Name, string Email, string? Phone, int OrderCount, bool Removed);
 
 /// <summary><see cref="ChangedBy"/> nulo: o sistema (webhook, job de 48 h).</summary>
 public sealed record AdminOrderHistoryResponse(string? FromStatus, string ToStatus, DateTime ChangedAt, string? ChangedBy, string? Note);
@@ -85,6 +86,7 @@ public static class AdminOrderActions
     public const string Deliver = "Deliver";
     public const string Cancel = "Cancel";
     public const string CorrectGiftMessage = "CorrectGiftMessage";
+    public const string Return = "Return";
 
     public static IReadOnlyList<string> For(OrderStatus status, bool isGift)
     {
@@ -94,6 +96,7 @@ public static class AdminOrderActions
             OrderStatus.PaymentConfirmed => [StartPreparation, Cancel],
             OrderStatus.Preparing => [Ship, Cancel],
             OrderStatus.Shipped => [Deliver, UpdateTracking],
+            OrderStatus.Delivered => [Return],
             _ => [],
         };
 
@@ -142,6 +145,9 @@ public sealed record ConfirmOrderPaymentCommand(Guid OrderId, string? Reason, Us
 
 public sealed record CorrectGiftMessageCommand(Guid OrderId, string? Message, UserId AdminId) : ICommand;
 
+/// <summary>Devolução de pedido entregue, com o motivo no histórico (entrega 6 §3, P11).</summary>
+public sealed record ReturnOrderCommand(Guid OrderId, string? Note, UserId AdminId) : ICommand;
+
 internal static class AdminOrderRules
 {
     public const int ReasonMaxLength = 500;
@@ -189,6 +195,12 @@ internal sealed class AdminCancelOrderValidator : AbstractValidator<AdminCancelO
 {
     public AdminCancelOrderValidator() =>
         RuleFor(x => x.Reason).NotEmpty().WithMessage("Escreva o motivo do cancelamento.").MaximumLength(AdminOrderRules.ReasonMaxLength);
+}
+
+internal sealed class ReturnOrderValidator : AbstractValidator<ReturnOrderCommand>
+{
+    public ReturnOrderValidator() =>
+        RuleFor(x => x.Note).NotEmpty().WithMessage("Conte o motivo da devolução.").MaximumLength(Order.ReturnNoteMaxLength);
 }
 
 internal sealed class ConfirmOrderPaymentValidator : AbstractValidator<ConfirmOrderPaymentCommand>
@@ -337,6 +349,7 @@ internal sealed class GetAdminOrderHandler(IDbConnectionFactory connectionFactor
                o.tracking_code, o.ship_recipient, o.ship_postal_code, o.ship_street, o.ship_number, o.ship_complement,
                o.ship_district, o.ship_city, o.ship_state, o.is_gift, o.gift_wrap, o.gift_message, o.notes,
                o.customer_id, c.full_name AS customer_name, u.email::text AS customer_email, c.phone AS customer_phone,
+               u.anonymized_at IS NOT NULL AS customer_removed,
                (SELECT count(*) FROM ordering.orders other WHERE other.customer_id = o.customer_id)::int AS customer_order_count
           FROM ordering.orders o
           JOIN identity.users u ON u.id = o.customer_id
@@ -401,7 +414,8 @@ internal sealed class GetAdminOrderHandler(IDbConnectionFactory connectionFactor
             order.CancellationReason,
             Utc(order.PlacedAt),
             Utc(order.PaymentDueAt),
-            new AdminOrderCustomerResponse(order.CustomerId, order.CustomerName, order.CustomerEmail, order.CustomerPhone, order.CustomerOrderCount),
+            new AdminOrderCustomerResponse(
+                order.CustomerId, order.CustomerName, order.CustomerEmail, order.CustomerPhone, order.CustomerOrderCount, order.CustomerRemoved),
             items,
             order.Subtotal,
             order.ShippingFee,
@@ -455,6 +469,7 @@ internal sealed class GetAdminOrderHandler(IDbConnectionFactory connectionFactor
         public string CustomerEmail { get; init; } = string.Empty;
         public string? CustomerPhone { get; init; }
         public int CustomerOrderCount { get; init; }
+        public bool CustomerRemoved { get; init; }
     }
 
     private sealed class ItemRow
@@ -669,5 +684,37 @@ internal sealed class CorrectGiftMessageHandler(IOrderRepository orders, TimePro
         var result = await AdminOrderChange.ApplyAsync(
             orders, command.OrderId, order => order.CorrectGiftMessage(command.Message, command.AdminId, now), cancellationToken);
         return result.IsSuccess ? Result.Success() : Result.Failure(result.Error);
+    }
+}
+
+/// <summary>
+/// Devolução (entrega 6 §3, P11): Entregue → Devolvido e estorno total pelo Outbox, como no cancelamento. A cliente recebe
+/// o EM-13 quando o estorno é aceito; pagamento confirmado à mão vai para a fila de estornos pendentes, porque só a loja
+/// devolve. O estoque não volta sozinho: a peça é conferida e entra por ajuste.
+/// </summary>
+internal sealed class ReturnOrderHandler(IOrderRepository orders, IUnitOfWork unitOfWork, IOutbox outbox, TimeProvider time)
+    : ICommandHandler<ReturnOrderCommand>
+{
+    public async Task<Result> Handle(ReturnOrderCommand command, CancellationToken cancellationToken)
+    {
+        var now = time.GetUtcNow().UtcDateTime;
+        var result = await AdminOrderChange.ApplyAsync(
+            orders, command.OrderId, order => order.MarkReturned(command.Note, command.AdminId, now), cancellationToken);
+        if (result.IsFailure)
+        {
+            return Result.Failure(result.Error);
+        }
+
+        var approved = await unitOfWork.Connection.QueryAsync<Guid>(new CommandDefinition(
+            "SELECT id FROM payments.payments WHERE order_id = @Id AND status = 'Approved' AND provider <> @Manual",
+            new { result.Value.Id, Manual = Payment.ManualProvider },
+            unitOfWork.Transaction,
+            cancellationToken: cancellationToken));
+        foreach (var paymentId in approved)
+        {
+            await outbox.EnqueueAsync(Payments.RefundPaymentMessage.Type, new Payments.RefundPaymentMessage(paymentId), cancellationToken);
+        }
+
+        return Result.Success();
     }
 }
