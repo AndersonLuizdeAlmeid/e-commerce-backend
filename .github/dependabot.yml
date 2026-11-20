@@ -11,6 +11,13 @@ updates:
     groups:
       nuget-minor-patch:
         update-types: [minor, patch]
+    # Pacotes da Microsoft acompanham o .NET da solução (global.json). A versão maior vem com o .NET novo: o 11 do
+    # HybridCache trouxe um segundo gerador de log e quebrou o build (20/11/2026).
+    ignore:
+      - dependency-name: "Microsoft.Extensions.*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "Microsoft.AspNetCore.*"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
@@ -29,3 +36,7 @@ updates:
     groups:
       docker-minor-patch:
         update-types: [minor, patch]
+    # A imagem do SDK e do runtime segue o global.json; a troca de versão maior do .NET é decisão, não atualização.
+    ignore:
+      - dependency-name: "dotnet/*"
+        update-types: ["version-update:semver-major"]

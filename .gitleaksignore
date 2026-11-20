@@ -1,3 +1,6 @@
 # Falsos positivos conferidos (entrega 6.2). Cada linha é a impressão digital que o gitleaks mostra.
 # CI remonta a chave de deploy a partir do segredo DEPLOY_SSH_KEY: só o texto BEGIN/END, nenhuma chave.
 f6ea076ef1e893ea794b3decf56a2b1228821869:.github/workflows/ci.yml:private-key:144
+# Senhas fixas dos testes funcionais (regra S4, 20/11/2026): valores de teste, não segredos.
+01d5eaca6d1650d4ce21240e245824fb198eb00b:tests/ECommerce.Api.FunctionalTests/Identity/PasswordAndEmailTests.cs:generic-api-key:10
+01d5eaca6d1650d4ce21240e245824fb198eb00b:tests/ECommerce.Api.FunctionalTests/Infrastructure/AuthClient.cs:generic-api-key:14
