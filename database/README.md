@@ -41,7 +41,7 @@ SELECT p.slug, count(v.*) AS variacoes
 
 ## Depois da fase 2A
 
-O admin inicial (RF-060) não vem em script: a API cria na primeira subida a partir de `AdminSeed:Email` e `AdminSeed:Password` (em Development: `admin@loja.local` / `Admin@12345`), se ainda não existir nenhum admin ativo. Senha só existe como hash PBKDF2 gerado pela aplicação.
+O admin inicial (RF-060) não vem em script: a API cria na primeira subida a partir de `AdminSeed:Email` e `AdminSeed:Password` (em Development: `admin@loja.local` / `Admin-Loja-12345`), se ainda não existir nenhum admin ativo. Senha só existe como hash PBKDF2 gerado pela aplicação.
 
 ```sql
 SELECT email, role, email_confirmed_at IS NOT NULL AS confirmado FROM identity.users;

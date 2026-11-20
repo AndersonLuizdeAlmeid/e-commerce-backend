@@ -21,8 +21,9 @@ public static class ShippingRegistration
                 settings => settings.Provider is ShippingProviderSettings.FakeProvider or ShippingProviderSettings.MelhorEnvioProvider,
                 "Shipping:Provider deve ser 'Fake' ou 'MelhorEnvio'.")
             .Validate(
-                settings => settings.Provider != ShippingProviderSettings.FakeProvider || environment.IsDevelopment() || environment.IsEnvironment("Testing"),
-                "O provedor de frete falso não pode ser usado fora de Development.")
+                // O ambiente de testes da equipe (Staging) pode cotar com o falso enquanto o token do sandbox não chega.
+                settings => settings.Provider != ShippingProviderSettings.FakeProvider || !environment.IsProduction(),
+                "O provedor de frete falso não pode ser usado em Production.")
             .Validate(
                 settings => settings.Provider != ShippingProviderSettings.MelhorEnvioProvider
                     || (!string.IsNullOrWhiteSpace(settings.MelhorEnvio.Token) && !string.IsNullOrWhiteSpace(settings.MelhorEnvio.UserAgent)),

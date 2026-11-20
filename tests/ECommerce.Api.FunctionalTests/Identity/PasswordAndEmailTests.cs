@@ -7,7 +7,7 @@ namespace ECommerce.Api.FunctionalTests.Identity;
 
 public sealed class PasswordAndEmailTests(ApiFactory factory) : FunctionalTest(factory)
 {
-    private const string NewPassword = "NovaSenha@456";
+    private const string NewPassword = "Nova-Frase-Segura-456";
 
     [Fact, Trait("Spec", "RF-006-CA1")]
     public async Task ChangePassword_EndsOtherSessionsKeepsCurrentAndSendsSecurityEmail()
@@ -62,7 +62,7 @@ public sealed class PasswordAndEmailTests(ApiFactory factory) : FunctionalTest(f
         reset.StatusCode.ShouldBe(HttpStatusCode.NoContent);
 
         // Uso único e sessões antigas encerradas (arquivo 23 §5).
-        var again = await Client.PostAsJsonAsync("/api/v1/auth/reset-password", new { token, newPassword = "Outra@7890" }, CancellationToken);
+        var again = await Client.PostAsJsonAsync("/api/v1/auth/reset-password", new { token, newPassword = "Outra-Frase-Segura-7890" }, CancellationToken);
         again.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         (await session.RefreshAsync()).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
 

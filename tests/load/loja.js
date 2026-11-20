@@ -17,7 +17,7 @@ const API = (__ENV.API_URL || "http://localhost:5101").replace(/\/+$/, "");
 const MAILPIT = (__ENV.MAILPIT_URL || "http://localhost:8125").replace(/\/+$/, "");
 const INTERNAL_KEY = __ENV.INTERNAL_KEY || "dev-internal-key";
 const ADMIN_EMAIL = __ENV.ADMIN_EMAIL || "admin@loja.local";
-const ADMIN_PASSWORD = __ENV.ADMIN_PASSWORD || "Admin@12345";
+const ADMIN_PASSWORD = __ENV.ADMIN_PASSWORD || "Admin-Loja-12345";
 const SMOKE = __ENV.SMOKE === "1";
 // Peça para o checkout (tem estoque reposto no setup) e peça da disputa (saldo vira 1 no setup).
 const CHECKOUT_PIECE = __ENV.CHECKOUT_PIECE || "brinco-gota-cristal";

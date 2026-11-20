@@ -46,11 +46,11 @@ public sealed class AuthenticationTests(ApiFactory factory) : FunctionalTest(fac
         (await Problem(response)).GetProperty("code").GetString().ShouldBe("Identity.EmailAlreadyInUse");
     }
 
-    [Theory, Trait("Spec", "RF-001-CA3")]
+    [Theory, Trait("Spec", "ENT6-S4")]
     [InlineData("curta1A")]
-    [InlineData("semnumeroA")]
-    [InlineData("SEMMINUSCULA1")]
-    [InlineData("semmaiuscula1")]
+    [InlineData("Senha@12345")]
+    [InlineData("senha123456789")]
+    [InlineData("123456789012")]
     public async Task Register_WithWeakPassword_ReturnsValidationErrorOnPassword(string password)
     {
         using var client = new AuthClient(Factory);

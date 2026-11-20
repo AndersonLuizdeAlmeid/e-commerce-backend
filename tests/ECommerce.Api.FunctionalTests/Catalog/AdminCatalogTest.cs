@@ -14,7 +14,7 @@ namespace ECommerce.Api.FunctionalTests.Catalog;
 public abstract class AdminCatalogTest(ApiFactory factory) : FunctionalTest(factory)
 {
     private const string AdminEmail = "admin@loja.teste";
-    private const string AdminPassword = "Admin@12345";
+    private const string AdminPassword = "Admin-Loja-12345";
 
     protected async Task<AuthClient> AdminAsync()
     {

@@ -18,8 +18,9 @@ public static class PaymentRegistration
                 settings => settings.Provider is PaymentSettings.FakeProvider or PaymentSettings.MercadoPagoProvider,
                 "Payments:Provider deve ser 'Fake' ou 'MercadoPago'.")
             .Validate(
-                settings => settings.Provider != PaymentSettings.FakeProvider || environment.IsDevelopment() || environment.IsEnvironment("Testing"),
-                "O provedor de pagamento falso não pode ser usado fora de Development.")
+                // O ambiente de testes da equipe (Staging) pode usar o falso, com "Simular pagamento aprovado"; produção nunca.
+                settings => settings.Provider != PaymentSettings.FakeProvider || !environment.IsProduction(),
+                "O provedor de pagamento falso não pode ser usado em Production.")
             .Validate(
                 settings => settings.Provider != PaymentSettings.MercadoPagoProvider || !string.IsNullOrWhiteSpace(settings.MercadoPago.AccessToken),
                 "Payments:MercadoPago:AccessToken é obrigatório com o provedor MercadoPago.")

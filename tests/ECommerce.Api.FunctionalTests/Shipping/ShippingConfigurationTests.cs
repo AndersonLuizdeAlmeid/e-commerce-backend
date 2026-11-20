@@ -25,8 +25,7 @@ public sealed class ShippingConfigurationTests
 
     [Theory, Trait("Spec", "22-CONFIG")]
     [InlineData("Production")]
-    [InlineData("Staging")]
-    public void FakeProvider_OutsideDevelopment_IsRefused(string environment)
+    public void FakeProvider_InProduction_IsRefused(string environment)
     {
         Should.Throw<OptionsValidationException>(() => Resolve(environment, ("Shipping:Provider", "Fake")));
     }
@@ -34,7 +33,8 @@ public sealed class ShippingConfigurationTests
     [Theory, Trait("Spec", "22-CONFIG")]
     [InlineData("Development")]
     [InlineData("Testing")]
-    public void FakeProvider_InDevelopment_IsAccepted(string environment)
+    [InlineData("Staging")]
+    public void FakeProvider_OutsideProduction_IsAccepted(string environment)
     {
         Resolve(environment, ("Shipping:Provider", "Fake")).Provider.ShouldBe("Fake");
     }

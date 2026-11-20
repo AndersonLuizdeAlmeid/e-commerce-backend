@@ -44,6 +44,15 @@ public sealed class PaymentConfigurationTests
         Should.Throw<OptionsValidationException>(() => Resolve("Production", MercadoPago("APP_USR-123", webhookSecret: null)));
 
     [Fact, Trait("Spec", "ENT6-4.2")]
+    public void FakeProvider_InProduction_IsRefused() =>
+        Should.Throw<OptionsValidationException>(() => Resolve("Production", ("Payments:Provider", "Fake")));
+
+    // Ambiente de testes da equipe: pagamento simulado até as credenciais do sandbox entrarem.
+    [Fact, Trait("Spec", "ENT6-4.2")]
+    public void FakeProvider_InStaging_IsAccepted() =>
+        Resolve("Staging", ("Payments:Provider", "Fake")).Provider.ShouldBe("Fake");
+
+    [Fact, Trait("Spec", "ENT6-4.2")]
     public void Production_WithRealCredentialAndSecret_IsAccepted() =>
         Resolve("Production", MercadoPago("APP_USR-123")).MercadoPago.AccessToken.ShouldBe("APP_USR-123");
 }

@@ -11,7 +11,7 @@ namespace ECommerce.Api.FunctionalTests.Infrastructure;
 /// </summary>
 public sealed class AuthClient(ApiFactory factory) : IDisposable
 {
-    public const string ValidPassword = "Senha@123";
+    public const string ValidPassword = "Joia-Preferida-123";
     public const string CookieName = "ecommerce_refresh";
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

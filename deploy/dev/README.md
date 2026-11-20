@@ -59,6 +59,56 @@ ligado, `ssh root@mo-dev`) ou pelo VNC da Contabo.
 | Banco pelo DBeaver | Conexão com túnel SSH para `mo-dev` (Tailscale ligado), banco em `127.0.0.1:3104`, usuário `ecommerce`, senha em `POSTGRES_PASSWORD` do `/opt/mo/.env` |
 | Aplicar mudanças do `bootstrap.sh` ou dos scripts `mo-*` | Baixar de novo e rodar o `bootstrap.sh` (passo 4): os scripts instalados vêm da `main` |
 
+## Ambiente de testes da equipe
+
+A mesma VM vira o ambiente de testes da equipe interna, aberto pelo navegador sem Tailscale:
+
+| | Desenvolvimento (padrão) | Testes da equipe |
+|---|---|---|
+| `MO_ENVIRONMENT` | `Development` | `Staging` |
+| Banco | Com peças, categorias e fotos de exemplo | Vazio: só a conta da administradora. Os donos da loja cadastram tudo pelo painel |
+| E-mail | Mailpit (ninguém recebe) | Resend, de verdade, para confirmar o cadastro e acompanhar os pedidos |
+| Endereço | `https://mo-dev.<rede>.ts.net`, só pelo Tailscale | `https://loja-teste.contrax.com.br` e `https://api-loja-teste.contrax.com.br`, pelo nginx da VM |
+| Loja | Sem faixa | Faixa "Ambiente de testes" no topo e nada indexado pelos buscadores (`STORE_ENV=staging`) |
+| Pagamento e frete | Simulados | Simulados até as credenciais de sandbox entrarem no `.env` (seção abaixo) |
+
+### Ligar
+
+1. **DNS:** registros `A` de `loja-teste.contrax.com.br` e `api-loja-teste.contrax.com.br` para o IP público da VM.
+2. **Resend:** domínio `contrax.com.br` verificado (SPF e DKIM no DNS) e uma API key só com permissão de envio.
+3. **`.env` da VM** (`/opt/mo/.env`, como root), colando os valores direto no arquivo:
+
+   ```
+   MO_ENVIRONMENT=Staging
+   STORE_URL=https://loja-teste.contrax.com.br
+   EMAIL_PROVIDER=Resend
+   RESEND_API_KEY=re_...
+   EMAIL_FROM_ADDRESS=nao-responda@contrax.com.br
+   EMAIL_FROM_NAME=MO (testes)
+   EMAIL_STORE_ADDRESS=...        # para onde vai o aviso de pedido novo
+   OPS_ALERT_EMAIL=...            # para onde vão os alertas da operação
+   ```
+
+   O `bootstrap.sh` reescreve `STORE_URL` com o endereço do Tailscale: depois de rodá-lo de novo, volte esta linha.
+4. **nginx:** `nginx-teste.conf` em `/etc/nginx/sites-available/mo-teste`, link em `sites-enabled`, `nginx -t`,
+   `systemctl reload nginx` e `certbot --nginx -d loja-teste.contrax.com.br -d api-loja-teste.contrax.com.br`.
+5. **GitHub, ambiente `dev` do frontend:** variáveis `STORE_URL=https://loja-teste.contrax.com.br`,
+   `API_URL=https://api-loja-teste.contrax.com.br` e `STORE_ENV=staging`. Os endereços ficam gravados no build da loja,
+   então a loja só muda no próximo deploy dela.
+6. **Banco do zero**, sem os dados de exemplo (apaga pedidos, clientes e fotos do ambiente):
+
+   ```bash
+   mo-backup                                   # por garantia
+   mo-compose down
+   docker volume rm mo-dev_pgdata mo-dev_rustfsdata
+   mo-compose up -d                            # o migrator recria o banco e a API cria a administradora
+   ```
+
+7. Entrar no painel (`/admin`) com `grep ADMIN_ /opt/mo/.env` e preencher **Configurações de frete** (CEP de origem,
+   caixa padrão, prazo de manuseio e preços de contingência) antes das primeiras compras.
+
+Para voltar ao desenvolvimento, apague as linhas acima do `.env`, volte as variáveis do GitHub e recrie o banco.
+
 ## Pagamentos com o Mercado Pago (Fase 4.3)
 
 Sem configuração nenhuma, a API usa a plataforma falsa: o PIX aparece e a tela mostra "Simular pagamento aprovado".
