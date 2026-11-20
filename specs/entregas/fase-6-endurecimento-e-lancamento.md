@@ -367,6 +367,19 @@ Os testes já cobriam IDOR, autorização do `/admin`, rotas anônimas, CORS, ra
 | k6 (rodada curta) | ✅ Contra a pilha de E2E: todos os limites verdes. A disputa criou **1** pedido e recusou os outros com `409 Ordering.OutOfStock`, e o saldo terminou em 0 |
 | C12 | ⏳ Na VM de produção (6.5) |
 
+### Preparo da 6.5 feito sem o domínio (20/11/2026)
+
+- **Configuração de produção** (§4.2), que completa o que a 6.1 começou:
+  - Em `Production`, a API recusa subir com a credencial de teste do Mercado Pago (`TEST-...`), sem a assinatura do webhook ou com o Melhor Envio apontando para o sandbox.
+  - Fora de Development, os provedores falsos e a chave JWT de desenvolvimento já eram recusados.
+  - O staging (`Staging`) continua aceitando credencial de teste e sandbox.
+  - Testes novos: `PaymentConfigurationTests` (4) e um caso a mais em `ShippingConfigurationTests`.
+- **Staging fechado para buscadores** (P13, C18), ligado por `NEXT_PUBLIC_ENV=staging` no build:
+  - `robots.txt` com `Disallow: /` e sem sitemap;
+  - `X-Robots-Tag: noindex, nofollow` em toda resposta, inclusive fotos e feed.
+  - Conferido com um build de staging e um padrão, que não mudou. O Dockerfile da loja já recebe o `ARG`.
+- **Suíte completa**: domínio 222, aplicação 47, arquitetura 8, funcionais 344 de 345. A única falha foi de novo o `MercadoPagoGatewayTests.Get_MapsTheStatus(charged_back)`, o timeout do WireMock com a suíte inteira já registrado na 6.1; sozinho, o adaptador passa nos 16. Na loja, 228 testes.
+
 ### Riscos
 
 | Risco | Mitigação |

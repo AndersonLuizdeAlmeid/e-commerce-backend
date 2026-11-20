@@ -27,6 +27,11 @@ public static class ShippingRegistration
                 settings => settings.Provider != ShippingProviderSettings.MelhorEnvioProvider
                     || (!string.IsNullOrWhiteSpace(settings.MelhorEnvio.Token) && !string.IsNullOrWhiteSpace(settings.MelhorEnvio.UserAgent)),
                 "Shipping:MelhorEnvio:Token e Shipping:MelhorEnvio:UserAgent são obrigatórios com o provedor MelhorEnvio.")
+            // O endereço padrão é o sandbox; em produção ele cotaria preço de teste (entrega 6 §4.2).
+            .Validate(
+                settings => !environment.IsProduction() || settings.Provider != ShippingProviderSettings.MelhorEnvioProvider
+                    || !settings.MelhorEnvio.BaseUrl.Contains("sandbox", StringComparison.OrdinalIgnoreCase),
+                "Em Production, Shipping:MelhorEnvio:BaseUrl precisa ser o de produção (https://melhorenvio.com.br/), não o sandbox.")
             .ValidateOnStart();
 
         if (section["Provider"] == ShippingProviderSettings.FakeProvider)

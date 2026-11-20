@@ -24,6 +24,15 @@ public static class PaymentRegistration
                 settings => settings.Provider != PaymentSettings.MercadoPagoProvider || !string.IsNullOrWhiteSpace(settings.MercadoPago.AccessToken),
                 "Payments:MercadoPago:AccessToken é obrigatório com o provedor MercadoPago.")
             .Validate(settings => settings.MaxInstallments is >= 1 and <= 12, "Payments:MaxInstallments vai de 1 a 12.")
+            // Produção cobra de verdade (entrega 6 §4.2): credencial de teste e webhook sem assinatura não sobem.
+            .Validate(
+                settings => !environment.IsProduction() || settings.Provider != PaymentSettings.MercadoPagoProvider
+                    || !settings.MercadoPago.AccessToken.StartsWith("TEST-", StringComparison.Ordinal),
+                "Em Production, Payments:MercadoPago:AccessToken precisa ser a credencial de produção, não a de teste (TEST-...).")
+            .Validate(
+                settings => !environment.IsProduction() || settings.Provider != PaymentSettings.MercadoPagoProvider
+                    || !string.IsNullOrWhiteSpace(settings.MercadoPago.WebhookSecret),
+                "Em Production, Payments:MercadoPago:WebhookSecret é obrigatório: sem ele nenhuma notificação é aceita.")
             .ValidateOnStart();
 
         if (section["Provider"] == PaymentSettings.FakeProvider)
