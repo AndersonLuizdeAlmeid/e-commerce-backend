@@ -203,7 +203,7 @@ Primeiro só build (A), depois banco (B) e por último execução (C). **A fase 
 | 6.1 — Outbox, jobs e alertas internos | ✅ Implementada e validada em 16/11/2026. As métricas OTLP do §4.2 ficaram para a 6.5, junto com o Grafana Cloud |
 | 6.2 — Segurança | ✅ Implementada e validada em 18/11/2026. Falta a varredura ZAP (C6), que depende do staging, e conferir a CSP com o cartão no sandbox (C5). Duas decisões de senha e login esperam você (abaixo) |
 | 6.3 — LGPD, páginas legais e devolução | ✅ Implementada e validada em 20/11/2026. Os textos de `/privacidade`, `/termos` e `/trocas-e-devolucoes` são rascunho: avisam isso no topo até a identificação da loja estar completa, e marcam em vermelho os pontos que a MO precisa decidir (§6, itens 4 e 5) |
-| 6.4 — E2E e carga | Planejada; k6 depende da 6.5 |
+| 6.4 — E2E e carga | 🟡 Implementada e validada localmente em 20/11/2026: 5 fluxos Playwright com axe (job `e2e` no CI da loja) e cenários k6 prontos. Falta o job rodar pela primeira vez no GitHub (depende da tag `main` das imagens do backend, publicada no próximo push na `main`) e o k6 de verdade na VM de produção (C12, 6.5) |
 | 6.5 — Produção e staging | Planejada; depende do domínio e da VM |
 | 6.6 — Google | 🟡 Feed implementado e validado em 20/11/2026. Falta configurar as contas (Search Console e Merchant Center), que dependem do domínio (6.5), e conferir C19 e C20 |
 | 6.7 — Homologação e lançamento | Planejada |
@@ -340,6 +340,32 @@ Os testes já cobriam IDOR, autorização do `/admin`, rotas anônimas, CORS, ra
 | Container | ✅ API em container com o banco de desenvolvimento: 40 itens, o mesmo número de variações elegíveis contadas por SQL; XML válido; `application/xml` e `Cache-Control: public, max-age=3600`. Os 24 códigos de barras do banco de exemplo estão em peças inativas, então nenhum GTIN aparece ali, como deveria |
 | Loja | ✅ build de produção contra a API em container: a loja serve o mesmo XML, byte a byte. Ao tirar uma peça da loja pelo painel, o feed da loja cai de 40 para 34 itens em 3 s pela revalidação, e volta para 40 em 4 s ao reativar |
 | C19, C20 | ⏳ Dependem das contas do Google e do domínio (6.5) |
+
+### E2E e carga (6.4, 20/11/2026)
+
+- **Onde**: os testes ficam em `e-commerce-frontend/e2e/`, com instruções no README. A pilha `e2e/compose.yml` sobe Postgres sem volume, com o seed de desenvolvimento, Mailpit, migrator e API das imagens, com pagamento e frete falsos. A loja roda com o build de produção na porta 3100.
+- **Os 5 fluxos**:
+  - compra com PIX, com o cadastro e a confirmação pelo link do Mailpit;
+  - compra com cartão de teste;
+  - cancelamento pela cliente, com o e-mail;
+  - painel do pagamento à devolução, com os e-mails EM-08, EM-09 e EM-13;
+  - busca → categoria → produto → sacola em 375 px, sem rolagem lateral.
+- **axe** roda em cada página visitada (WCAG 2.1 A e AA) e falha em violação séria ou crítica. **Nenhuma apareceu**: cadastro, conta, confirmação, produto, sacola, os três passos do checkout, pagamento PIX e cartão, Meus pedidos, painel e a vitrine no celular.
+- **CI da loja**: novo job `e2e` com as imagens `:main` da API e do migrator, ou outras pelas variáveis `E2E_API_IMAGE` e `E2E_MIGRATOR_IMAGE`. A publicação da imagem da loja passa a esperar o E2E verde. Se o job falhar, o relatório, os traces e o log da pilha ficam como artefato por 7 dias.
+- **CI do backend**: as imagens da API e do migrator ganham também a tag móvel `main`, além da `sha-…`, só para o E2E da loja. O deploy continua pelo digest.
+- **Ajustes de teste**:
+  - o link de confirmação de e-mail pede um clique, e o teste clica como a cliente;
+  - no celular, o "Adicionar à sacola" existe duas vezes (o fixo no rodapé e o do conteúdo), e o teste usa o visível;
+  - o passo de endereço do checkout foi feito determinístico depois de uma corrida no próprio teste.
+- **k6** (`e-commerce-backend/tests/load/`): vitrine a 100 req/s, frete a 10/s, checkout com 20 clientes e disputa pela última unidade. As metas do RNF-001 são limites do script, que sai com erro se alguma falhar. O README explica a rodada na VM (P15): Mailpit como SMTP e limites por IP altos só durante o teste, e o banco recriado depois.
+
+| Item | Resultado |
+|------|-----------|
+| A2 | ✅ lint, typecheck (inclui `e2e/`), 224 testes da loja; `actionlint` sem erro nos workflows dos dois repositórios; `npm audit --audit-level=high` sem achado com o Playwright e o axe |
+| C11 (local) | ✅ **5 de 5** fluxos verdes, duas rodadas seguidas no mesmo banco (1,3 min cada), contra a API em container gerada do backend local e o build de produção da loja; nenhuma violação séria do axe |
+| C11 (CI) | ⏳ Primeira rodada no GitHub depois do merge do backend na `main` (tag `main` das imagens) |
+| k6 (rodada curta) | ✅ Contra a pilha de E2E: todos os limites verdes. A disputa criou **1** pedido e recusou os outros com `409 Ordering.OutOfStock`, e o saldo terminou em 0 |
+| C12 | ⏳ Na VM de produção (6.5) |
 
 ### Riscos
 
